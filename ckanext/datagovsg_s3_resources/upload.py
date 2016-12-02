@@ -23,21 +23,17 @@ def upload_resource_to_s3(context, rsc):
         rsc.get('url', ''))
     extension = mimetypes.guess_extension(content_type)
 
-    # Get location of file on CKAN server
-    upload = uploader.ResourceUpload(rsc)
-    filepath = upload.get_path(rsc['id'])
-
     # Upload to S3
     pkg = toolkit.get_action('package_show')(context, {'id': rsc['package_id']})
     s3_filepath = pkg.get('name') + '/' + slugify(rsc['name'], to_lower=True) + extension
-    obj = bucket.put_object(Key=s3_filepath, Body=open(filepath, 'r'), ContentType=content_type)
+    rsc['upload'].file.seek(0)
+    obj = bucket.put_object(Key=s3_filepath, Body=rsc['upload'].file, ContentType=content_type)
     obj.Acl().put(ACL='public-read')
 
     # Modify fields in resource
-    rsc['url_type'] = ''
-    rsc['url'] = config.get('ckan.s3_resources.s3_url') + s3_filepath
     rsc['upload'] = ''
-    rsc['s3'] = True
+    rsc['url_type'] = 's3'
+    rsc['url'] = config.get('ckan.s3_resources.s3_url') + s3_filepath
 
 
 def upload_zipfiles_to_s3(context, new_rsc):
