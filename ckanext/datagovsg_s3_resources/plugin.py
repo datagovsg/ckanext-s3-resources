@@ -1,9 +1,27 @@
 import ckan.plugins as plugins
 import ckan.plugins.toolkit as toolkit
 import upload
+from routes.mapper import SubMapper
 
 class Datagovsg_S3_ResourcesPlugin(plugins.SingletonPlugin):
     plugins.implements(plugins.IResourceController, inherit=True)
+    plugins.implements(plugins.IRoutes, inherit=True)
+
+    # IRoutes
+
+    def before_map(self, map):
+        m = SubMapper(
+            map,
+            controller='ckanext.datagovsg_s3_resources.controllers.package:S3ResourcesPackageController')
+        # import routes
+        # print routes.url_for()
+        m.connect('package_download',
+                  '/dataset/{id}/download', action="package_download")
+        m.connect(
+            'resource_download',
+            '/dataset/{id}/resource/{resource_id}/download',
+            action="resource_download")
+        return map
 
     # IResourceController
 
