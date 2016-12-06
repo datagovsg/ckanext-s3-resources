@@ -12,9 +12,21 @@ import mimetypes
 import cgi
 import collections
 
+def setup_s3():
+    aws_access_key_id = config.get('ckan.s3_resources.s3_s3_aws_access_key_id')
+    aws_secret_access_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
+    aws_region_name = config.get('ckan.s3_resources.s3_aws_region_name')
+    if aws_region_name:
+        s3 = boto3.resource('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key, region_name=aws_region_name)
+    else:
+        s3 = boto3.resource('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+    return s3
+
+
 def upload_resource_to_s3(context, rsc):
     # Init connection to s3
-    s3 = boto3.resource('s3')
+    s3 = setup_s3()
+    
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
     bucket = s3.Bucket(bucket_name)
 
@@ -96,7 +108,9 @@ def upload_zipfiles_to_s3(context, new_rsc):
                     response.content)
 
     # Initialize connection to s3
-    s3 = boto3.resource('s3')
+    aws_access_key_id = config.get('ckan.s3_resources.s3_s3_aws_access_key_id')
+    aws_secret_access_key = config.get('ckan.s3_resources.s3_s3_aws_secret_access_key')
+    s3 = boto3.resource('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
     bucket = s3.Bucket(bucket_name)
 
