@@ -13,7 +13,7 @@ import cgi
 import collections
 
 def setup_s3():
-    aws_access_key_id = config.get('ckan.s3_resources.s3_s3_aws_access_key_id')
+    aws_access_key_id = config.get('ckan.s3_resources.s3_aws_access_key_id')
     aws_secret_access_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
     aws_region_name = config.get('ckan.s3_resources.s3_aws_region_name')
     if aws_region_name:
@@ -37,10 +37,17 @@ def upload_resource_to_s3(context, rsc):
 
     # Upload to S3
     pkg = toolkit.get_action('package_show')(context, {'id': rsc['package_id']})
-    s3_filepath = pkg.get('name') + '/' + slugify(rsc['name'], to_lower=True) + extension
+    s3_filepath = pkg.get('name') + '/' + slugify(rsc.get('name'), to_lower=True) + extension
     rsc['upload'].file.seek(0)
     obj = bucket.put_object(Key=s3_filepath, Body=rsc['upload'].file, ContentType=content_type)
     obj.Acl().put(ACL='public-read')
+    # Upload timestamped file to archive directory
+    if config.get('ckan.s3_resources.archive_old_resources') == 'yes':
+        utc_datetime_now = context['s3_upload_timestamp']
+        s3_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(rsc.get('name'), to_lower=True) + utc_datetime_now + extension
+        rsc['upload'].file.seek(0)
+        obj = bucket.put_object(Key=s3_archive_filepath, Body=rsc['upload'].file, ContentType=content_type)
+        obj.Acl().put(ACL='public-read')
 
     # Modify fields in resource
     rsc['upload'] = ''
@@ -74,9 +81,9 @@ def upload_zipfiles_to_s3(context, new_rsc):
 
     # Write metadata to package and updated resource zip
     package_zip_archive.writestr(
-        'metadata-' + pkg['name'] + '.txt', metadata_yaml_buff.getvalue())
+        'metadata-' + pkg.get('name') + '.txt', metadata_yaml_buff.getvalue())
     new_rsc_zip_archive.writestr(
-        'metadata-' + pkg['name'] + '.txt', metadata_yaml_buff.getvalue())
+        'metadata-' + pkg.get('name') + '.txt', metadata_yaml_buff.getvalue())
 
     # Start session to make requests: for downloading files from S3
     session = requests.Session()
@@ -104,13 +111,11 @@ def upload_zipfiles_to_s3(context, new_rsc):
                     toolkit.abort(404, toolkit._('Resource data not found'))
 
                 package_zip_archive.writestr(
-                    slugify(rsc['name'], to_lower=True) + extension,
+                    slugify(rsc.get('name'), to_lower=True) + extension,
                     response.content)
 
     # Initialize connection to s3
-    aws_access_key_id = config.get('ckan.s3_resources.s3_s3_aws_access_key_id')
-    aws_secret_access_key = config.get('ckan.s3_resources.s3_s3_aws_secret_access_key')
-    s3 = boto3.resource('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+    s3 = setup_s3()
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
     bucket = s3.Bucket(bucket_name)
 
@@ -126,24 +131,39 @@ def upload_zipfiles_to_s3(context, new_rsc):
 
     # Write new_rsc file into package zip
     package_zip_archive.writestr(
-        slugify(new_rsc['name'], to_lower=True) + extension,
+        slugify(new_rsc.get('name'), to_lower=True) + extension,
         response.content)
 
     # Write new_rsc file into the updated resource zip
-    new_rsc_zip_archive.writestr(slugify(new_rsc['name'], to_lower=True) + extension, 
+    new_rsc_zip_archive.writestr(slugify(new_rsc.get('name'), to_lower=True) + extension, 
         response.content)
 
     # Upload updated resource zip
     new_rsc_zip_archive.close()
-    file_name = str(pkg['name']) + '/' + slugify(new_rsc['name'], to_lower=True) + '.zip'
+    file_name = pkg.get('name') + '/' + slugify(new_rsc.get('name'), to_lower=True) + '.zip'
     obj = bucket.put_object(Key=file_name, Body=new_rsc_buff.getvalue(), ContentType='application/zip')
     obj.Acl().put(ACL='public-read')
 
     # Upload package zip
     package_zip_archive.close()
-    package_file_name = str(pkg['name']) + '/' + str(pkg['name']) + '.zip'
+    package_file_name = pkg.get('name') + '/' + pkg.get('name') + '.zip'
     obj = bucket.put_object(Key=package_file_name, Body=package_buff.getvalue(), ContentType='application/zip')
     obj.Acl().put(ACL='public-read')
+
+    # Upload timestamped files to archive directory
+    if config.get('ckan.s3_resources.archive_old_resources') == 'yes':
+        utc_datetime_now = context['s3_upload_timestamp']
+        rsc_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(new_rsc.get('name'), to_lower=True) + utc_datetime_now + '.zip'
+        obj = bucket.put_object(Key=rsc_archive_filepath, Body=new_rsc_buff.getvalue(), ContentType=content_type)
+        obj.Acl().put(ACL='public-read')
+
+        package_archive_filepath = 'archive/' + pkg.get('name') + '/' + pkg.get('name') + utc_datetime_now + '.zip'
+        obj = bucket.put_object(Key=package_archive_filepath, Body=package_buff.getvalue(), ContentType='application/zip')
+        obj.Acl().put(ACL='public-read')
+
+
+
+
 
 
 class MetadataYAMLDumper(yaml.SafeDumper):
