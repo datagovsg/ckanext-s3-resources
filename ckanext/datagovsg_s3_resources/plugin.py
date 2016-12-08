@@ -29,6 +29,10 @@ class Datagovsg_S3_ResourcesPlugin(plugins.SingletonPlugin):
     # IResourceController
 
     def before_create(self, context, resource):
+        # Check if required config options exist
+        if not upload.config_exists():
+            raise Exception('Config options for S3 resources extension missing.')
+
         # Set timestamp for archiving
         utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H:%M:%SZ")
         context['s3_upload_timestamp'] = utc_datetime_now
@@ -53,6 +57,10 @@ class Datagovsg_S3_ResourcesPlugin(plugins.SingletonPlugin):
 
 
     def before_update(self, context, current, resource):
+        # Check if required config options exist
+        if not upload.config_exists():
+            raise Exception('Config options for S3 resources extension missing.')
+            
         # Set timestamp for archiving 
         utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H:%M:%SZ")
         context['s3_upload_timestamp'] = utc_datetime_now

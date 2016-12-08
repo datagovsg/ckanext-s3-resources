@@ -296,3 +296,17 @@ def is_downloadable_url(url):
         return True
     return False
 
+def config_exists():
+    access_key = config.get('ckan.s3_resources.s3_aws_access_key_id')
+    secret_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
+    bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
+    url = config.get('ckan.s3_resources.s3_url')
+    archive = config.get('ckan.s3_resources.archive_old_resources')
+    blacklist = config.get('ckan.s3_resources.upload_filetype_blacklist')
+
+    return (access_key == None or
+        secret_key == None or
+        bucket_name == None or
+        url == None or
+        archive == None or
+        blacklist == None)
