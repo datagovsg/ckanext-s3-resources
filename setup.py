@@ -79,5 +79,7 @@ setup(
     entry_points='''
         [ckan.plugins]
         datagovsg_s3_resources=ckanext.datagovsg_s3_resources.plugin:Datagovsg_S3_ResourcesPlugin
+        [paste.paster_command]
+        migrate_s3 = ckanext.datagovsg_s3_resources.commands:MigrateToS3
     ''',
 )

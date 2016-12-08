@@ -11,6 +11,7 @@ import requests
 import mimetypes
 import cgi
 import collections
+import os
 
 def setup_s3():
     aws_access_key_id = config.get('ckan.s3_resources.s3_aws_access_key_id')
@@ -42,7 +43,7 @@ def upload_resource_to_s3(context, rsc):
     obj = bucket.put_object(Key=s3_filepath, Body=rsc['upload'].file, ContentType=content_type)
     obj.Acl().put(ACL='public-read')
     # Upload timestamped file to archive directory
-    if config.get('ckan.s3_resources.archive_old_resources') == 'yes':
+    if toolkit.asbool(config.get('ckan.s3_resources.archive_old_resources', False)):
         utc_datetime_now = context['s3_upload_timestamp']
         s3_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(rsc.get('name'), to_lower=True) + utc_datetime_now + extension
         rsc['upload'].file.seek(0)
@@ -53,6 +54,44 @@ def upload_resource_to_s3(context, rsc):
     rsc['upload'] = ''
     rsc['url_type'] = 's3'
     rsc['url'] = config.get('ckan.s3_resources.s3_url') + s3_filepath
+
+
+def migrate_to_s3_upload(context, resource):
+    s3 = setup_s3()
+
+    bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
+    bucket = s3.Bucket(bucket_name)
+
+    # Start session to download files
+    session = requests.Session()
+
+    try:
+        response = session.get(
+            resource.get('url', ''), timeout=10)
+
+    except requests.exceptions.RequestException as e:
+        toolkit.abort(404, toolkit._(
+            'Resource data not found'))
+
+    # Get content type and extension
+    content_type, content_enc = mimetypes.guess_type(
+        resource.get('url', ''))
+    extension = mimetypes.guess_extension(content_type)
+
+    pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
+    s3_filepath = pkg.get('name') + '/' + slugify(resource.get('name'), to_lower=True) + extension
+    obj = bucket.put_object(Key=s3_filepath, Body=response.content, ContentType=content_type)
+    obj.Acl().put(ACL='public-read')
+    # Upload timestamped file to archive directory
+    if toolkit.asbool(config.get('ckan.s3_resources.archive_old_resources', False)):
+        utc_datetime_now = context['s3_upload_timestamp']
+        s3_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(resource.get('name'), to_lower=True) + utc_datetime_now + extension
+        obj = bucket.put_object(Key=s3_archive_filepath, Body=response.content, ContentType=content_type)
+        obj.Acl().put(ACL='public-read')
+
+
+    resource['url_type'] = 's3'
+    resource['url'] = config.get('ckan.s3_resources.s3_url') + s3_filepath
 
 
 def upload_zipfiles_to_s3(context, new_rsc):
@@ -67,10 +106,6 @@ def upload_zipfiles_to_s3(context, new_rsc):
     package_buff = StringIO.StringIO()
     package_zip_archive = zipfile.ZipFile(package_buff, mode='w')
 
-    # Initialize resource zip file
-    new_rsc_buff = StringIO.StringIO()
-    new_rsc_zip_archive = zipfile.ZipFile(new_rsc_buff, mode='w')
-
     # Initialize metadata
     # Package and resources have the same metadata file
     metadata_yaml_buff = StringIO.StringIO()
@@ -82,8 +117,6 @@ def upload_zipfiles_to_s3(context, new_rsc):
     # Write metadata to package and updated resource zip
     package_zip_archive.writestr(
         'metadata-' + pkg.get('name') + '.txt', metadata_yaml_buff.getvalue())
-    new_rsc_zip_archive.writestr(
-        'metadata-' + pkg.get('name') + '.txt', metadata_yaml_buff.getvalue())
 
     # Start session to make requests: for downloading files from S3
     session = requests.Session()
@@ -91,28 +124,39 @@ def upload_zipfiles_to_s3(context, new_rsc):
     # Find extension and content-type of the resource
     content_type, content_enc = mimetypes.guess_type(
         new_rsc.get('url', ''))
-    extension = mimetypes.guess_extension(content_type)
+    if content_type != None:
+        extension = mimetypes.guess_extension(content_type)
+    else:
+        extension = ''
+
+    # Get blacklist from config
+    blacklist = config.get('ckan.s3_resources.upload_filetype_blacklist').split()
+    blacklist = [t.lower() for t in blacklist]
 
     if pkg.get('resources'):
         # Iterate over resources, downloading and storing them in the package zip file
         for rsc in pkg['resources']:
-            # Case 1: Resource is not on s3 yet, need to download from CKAN
-            if rsc.get('url_type') == 'upload':
-                upload = uploader.ResourceUpload(rsc)
-                filepath = upload.get_path(rsc['id'])
-                package_zip_archive.write(filepath, slugify(
-                    rsc['name'], to_lower=True) + extension)
-            # Case 2: Resource exists on S3, download into package zip file
-            elif is_downloadable_url(rsc.get('url', '')):
-                # Try to download the resource from the provided URL
-                try:
-                    response = session.get(rsc.get('url', ''), timeout=10)
-                except requests.exceptions.RequestException as e:
-                    toolkit.abort(404, toolkit._('Resource data not found'))
+            # Check if resource format is blacklisted
+            if rsc['format'] not in blacklist:
+                # Case 1: Resource is not on s3 yet, need to download from CKAN
+                if rsc.get('url_type') == 'upload':
+                    upload = uploader.ResourceUpload(rsc)
+                    filepath = upload.get_path(rsc['id'])
+                    rsc_extension = os.path.splitext(rsc['url'])[1]
+                    package_zip_archive.write(filepath, slugify(
+                        rsc['name'], to_lower=True) + rsc_extension)
+                # Case 2: Resource exists on S3, download into package zip file
+                elif is_downloadable_url(rsc.get('url', '')):
+                    # Try to download the resource from the provided URL
+                    try:
+                        response = session.get(rsc.get('url', ''), timeout=10)
+                    except requests.exceptions.RequestException as e:
+                        toolkit.abort(404, toolkit._('Resource data not found'))
 
-                package_zip_archive.writestr(
-                    slugify(rsc.get('name'), to_lower=True) + extension,
-                    response.content)
+                    rsc_extension = os.path.splitext(rsc['url'])[1]
+                    package_zip_archive.writestr(
+                        slugify(rsc.get('name'), to_lower=True) + rsc_extension,
+                        response.content)
 
     # Initialize connection to s3
     s3 = setup_s3()
@@ -129,20 +173,37 @@ def upload_zipfiles_to_s3(context, new_rsc):
         toolkit.abort(404, toolkit._(
             'Resource data not found'))
 
-    # Write new_rsc file into package zip
-    package_zip_archive.writestr(
-        slugify(new_rsc.get('name'), to_lower=True) + extension,
-        response.content)
 
-    # Write new_rsc file into the updated resource zip
-    new_rsc_zip_archive.writestr(slugify(new_rsc.get('name'), to_lower=True) + extension, 
-        response.content)
+    # Only upload resource zip file if it is not blacklisted
+    if extension.lower()[1:] not in blacklist:
+        # Initialize resource zip file
+        new_rsc_buff = StringIO.StringIO()
+        new_rsc_zip_archive = zipfile.ZipFile(new_rsc_buff, mode='w')
 
-    # Upload updated resource zip
-    new_rsc_zip_archive.close()
-    file_name = pkg.get('name') + '/' + slugify(new_rsc.get('name'), to_lower=True) + '.zip'
-    obj = bucket.put_object(Key=file_name, Body=new_rsc_buff.getvalue(), ContentType='application/zip')
-    obj.Acl().put(ACL='public-read')
+        # Write metadata to resource zip
+        new_rsc_zip_archive.writestr(
+            'metadata-' + pkg.get('name') + '.txt', metadata_yaml_buff.getvalue())
+
+        # Write new_rsc file into package zip
+        package_zip_archive.writestr(
+            slugify(new_rsc.get('name'), to_lower=True) + extension,
+            response.content)
+
+        # Write new_rsc file into the updated resource zip
+        new_rsc_zip_archive.writestr(slugify(new_rsc.get('name'), to_lower=True) + extension, 
+            response.content)
+
+        # Upload updated resource zip
+        new_rsc_zip_archive.close()
+        file_name = pkg.get('name') + '/' + slugify(new_rsc.get('name'), to_lower=True) + '.zip'
+        obj = bucket.put_object(Key=file_name, Body=new_rsc_buff.getvalue(), ContentType='application/zip')
+        obj.Acl().put(ACL='public-read')
+
+        if toolkit.asbool(config.get('ckan.s3_resources.archive_old_resources', False)):
+            utc_datetime_now = context['s3_upload_timestamp']
+            rsc_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(new_rsc.get('name'), to_lower=True) + utc_datetime_now + '.zip'
+            obj = bucket.put_object(Key=rsc_archive_filepath, Body=new_rsc_buff.getvalue(), ContentType=content_type)
+            obj.Acl().put(ACL='public-read')
 
     # Upload package zip
     package_zip_archive.close()
@@ -151,12 +212,8 @@ def upload_zipfiles_to_s3(context, new_rsc):
     obj.Acl().put(ACL='public-read')
 
     # Upload timestamped files to archive directory
-    if config.get('ckan.s3_resources.archive_old_resources') == 'yes':
+    if toolkit.asbool(config.get('ckan.s3_resources.archive_old_resources', False)):
         utc_datetime_now = context['s3_upload_timestamp']
-        rsc_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(new_rsc.get('name'), to_lower=True) + utc_datetime_now + '.zip'
-        obj = bucket.put_object(Key=rsc_archive_filepath, Body=new_rsc_buff.getvalue(), ContentType=content_type)
-        obj.Acl().put(ACL='public-read')
-
         package_archive_filepath = 'archive/' + pkg.get('name') + '/' + pkg.get('name') + utc_datetime_now + '.zip'
         obj = bucket.put_object(Key=package_archive_filepath, Body=package_buff.getvalue(), ContentType='application/zip')
         obj.Acl().put(ACL='public-read')
