@@ -13,11 +13,11 @@ class Datagovsg_S3_ResourcesPlugin(plugins.SingletonPlugin):
     # IRoutes
 
     def before_map(self, map):
+        # Connect our package controller
         m = SubMapper(
             map,
             controller='ckanext.datagovsg_s3_resources.controllers.package:S3ResourcesPackageController')
-        # import routes
-        # print routes.url_for()
+        # Connect routes for package and resource download
         m.connect('package_download',
                   '/dataset/{id}/download', action="package_download")
         m.connect(
