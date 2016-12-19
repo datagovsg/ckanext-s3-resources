@@ -63,17 +63,15 @@ def upload_resource_to_s3(context, rsc):
 
     # Upload to S3
     pkg = toolkit.get_action('package_show')(context, {'id': rsc['package_id']})
-    s3_filepath = pkg.get('name') + '/' + slugify(rsc.get('name'), to_lower=True) + extension
+    utc_datetime_now = context['s3_upload_timestamp']
+    s3_filepath = (pkg.get('name') + '/' + slugify(rsc.get('name'), to_lower=True)
+                   + utc_datetime_now + extension)
     rsc['upload'].file.seek(0)
-    obj = bucket.put_object(Key=s3_filepath, Body=rsc['upload'].file, ContentType=content_type)
+    bucket.Object(s3_filepath).delete()
+    obj = bucket.put_object(Key=s3_filepath,
+                            Body=rsc['upload'].file,
+                            ContentType=content_type)
     obj.Acl().put(ACL='public-read')
-    # Upload timestamped file to archive directory
-    if toolkit.asbool(config.get('ckan.s3_resources.archive_old_resources', False)):
-        utc_datetime_now = context['s3_upload_timestamp']
-        s3_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(rsc.get('name'), to_lower=True) + utc_datetime_now + extension
-        rsc['upload'].file.seek(0)
-        obj = bucket.put_object(Key=s3_archive_filepath, Body=rsc['upload'].file, ContentType=content_type)
-        obj.Acl().put(ACL='public-read')
 
     # Modify fields in resource
     rsc['upload'] = ''
@@ -113,16 +111,16 @@ def migrate_to_s3_upload(context, resource):
     extension = mimetypes.guess_extension(content_type)
 
     pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
-    s3_filepath = pkg.get('name') + '/' + slugify(resource.get('name'), to_lower=True) + extension
-    obj = bucket.put_object(Key=s3_filepath, Body=response.content, ContentType=content_type)
+    utc_datetime_now = context['s3_upload_timestamp']
+    s3_filepath = (pkg.get('name') 
+                   + '/' 
+                   + slugify(resource.get('name'), to_lower=True) 
+                   + utc_datetime_now 
+                   + extension)
+    obj = bucket.put_object(Key=s3_filepath,
+                            Body=response.content,
+                            ContentType=content_type)
     obj.Acl().put(ACL='public-read')
-    # Upload timestamped file to archive directory
-    if toolkit.asbool(config.get('ckan.s3_resources.archive_old_resources', False)):
-        utc_datetime_now = context['s3_upload_timestamp']
-        s3_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(resource.get('name'), to_lower=True) + utc_datetime_now + extension
-        obj = bucket.put_object(Key=s3_archive_filepath, Body=response.content, ContentType=content_type)
-        obj.Acl().put(ACL='public-read')
-
 
     resource['url_type'] = 's3'
     resource['url'] = config.get('ckan.s3_resources.s3_url') + s3_filepath
@@ -240,15 +238,16 @@ def upload_zipfiles_to_s3(context, new_rsc):
 
         # Upload updated resource zip
         new_rsc_zip_archive.close()
-        file_name = pkg.get('name') + '/' + slugify(new_rsc.get('name'), to_lower=True) + '.zip'
-        obj = bucket.put_object(Key=file_name, Body=new_rsc_buff.getvalue(), ContentType='application/zip')
+        file_name = (pkg.get('name') 
+                     + '/' 
+                     + slugify(new_rsc.get('name'), to_lower=True) 
+                     + utc_datetime_now 
+                     + '.zip')
+        obj = bucket.put_object(
+            Key=file_name,
+            Body=new_rsc_buff.getvalue(),
+            ContentType='application/zip')
         obj.Acl().put(ACL='public-read')
-
-        if toolkit.asbool(config.get('ckan.s3_resources.archive_old_resources', False)):
-            utc_datetime_now = context['s3_upload_timestamp']
-            rsc_archive_filepath = 'archive/' + pkg.get('name') + '/' + slugify(new_rsc.get('name'), to_lower=True) + utc_datetime_now + '.zip'
-            obj = bucket.put_object(Key=rsc_archive_filepath, Body=new_rsc_buff.getvalue(), ContentType=content_type)
-            obj.Acl().put(ACL='public-read')
 
     # Upload package zip
     package_zip_archive.close()
@@ -262,17 +261,6 @@ def upload_zipfiles_to_s3(context, new_rsc):
         Body=package_buff.getvalue(),
         ContentType='application/zip')
     obj.Acl().put(ACL='public-read')
-
-    # Upload timestamped files to archive directory
-    if toolkit.asbool(config.get('ckan.s3_resources.archive_old_resources', False)):
-        utc_datetime_now = context['s3_upload_timestamp']
-        package_archive_filepath = 'archive/' + pkg.get('name') + '/' + pkg.get('name') + utc_datetime_now + '.zip'
-        obj = bucket.put_object(Key=package_archive_filepath, Body=package_buff.getvalue(), ContentType='application/zip')
-        obj.Acl().put(ACL='public-read')
-
-
-
-
 
 
 class MetadataYAMLDumper(yaml.SafeDumper):
@@ -362,7 +350,6 @@ def config_exists():
     secret_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
     url = config.get('ckan.s3_resources.s3_url')
-    archive = config.get('ckan.s3_resources.archive_old_resources')
     blacklist = config.get('ckan.s3_resources.upload_filetype_blacklist')
 
     return not (access_key is None or

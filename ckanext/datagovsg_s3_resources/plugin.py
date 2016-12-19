@@ -100,3 +100,11 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
         '''Uploads package and resource zip files to S3
         Done after create instead of before to ensure metadata is generated correctly'''
         upload.upload_zipfiles_to_s3(context, resource)
+
+        # Push data to datastore
+        # Unfortunately we have to do this here because datapusher currently runs on the
+        # IResourceUrlChange.notify hook which is getting passed as input the OLD resource
+        if plugins.plugin_loaded('datastore'):
+            plugins.toolkit.c.pkg_dict = plugins.toolkit.get_action('datapusher_submit')(
+                None, {'resource_id': resource['id']}
+            )
