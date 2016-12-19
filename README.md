@@ -17,7 +17,6 @@ For the extension to work, you need to ensure that the following configuration o
     * Resource URLs will be in the form of `<base_url><package_name>/<resource_filename>`
     * Package zip URLs will be in the form of `<base_url><package_name>/<package_name>.zip`
     * e.g. `ckan.s3_resources.s3_url = https://bucket-name.s3.amazonaws.com/`
-* `ckan.s3_resources.archive_old_resources` - True/False. If set to True, whenever any resource/package gets updated, a timestamped copy is uploaded to an archive directory in S3
 * `ckan.s3_resources.upload_filetype_blacklist` - A space separated list of file formats to ignore.
     * e.g. `ckan.s3_resources.upload_filetype_blacklist = csv pdf xls`
 
