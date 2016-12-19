@@ -1,12 +1,13 @@
+'''Adds paster command to migrate existing CKAN resources to S3'''
+import datetime
 
 import ckan.model as model
-import ckan.plugins.toolkit as toolkit
 import ckan.lib.cli as cli
-import upload
-import datetime
+import ckan.plugins.toolkit as toolkit
 import ckan.logic as logic
 from pylons import config
-import mimetypes
+
+import upload
 
 
 class MigrateToS3(cli.CkanCommand):
@@ -22,10 +23,16 @@ class MigrateToS3(cli.CkanCommand):
     min_args = 0
 
     def command(self):
+        '''Runs on the migrate_s3 command'''
         self._load_config()
 
         user = toolkit.get_action('get_site_user')({'model': model, 'ignore_auth': True}, {})
-        context = {'model': model, 'session': model.Session, 'user': user['name'], 'ignore_auth': True}
+        context = {
+            'model': model,
+            'session': model.Session,
+            'user': user['name'],
+            'ignore_auth': True
+        }
         # Set timestamp for archiving
         utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H:%M:%SZ")
         context['s3_upload_timestamp'] = utc_datetime_now
@@ -33,7 +40,6 @@ class MigrateToS3(cli.CkanCommand):
         dataset_names = toolkit.get_action('package_list')(context, {})
         key_errors = 0
         validation_errors = 0
-        other_errors = 0
         pkg_crashes = set()
         other_errors = []
 
@@ -45,7 +51,7 @@ class MigrateToS3(cli.CkanCommand):
         extensions_seen = set()
 
         for dataset_name in dataset_names:
-            pkg = toolkit.get_action('package_show')(context, {'id':dataset_name })
+            pkg = toolkit.get_action('package_show')(context, {'id': dataset_name})
             if pkg.get('num_resources') > 0:
                 for resource in pkg.get('resources'):
                     # If filetype of resource is blacklisted, skip the upload to S3
@@ -55,14 +61,14 @@ class MigrateToS3(cli.CkanCommand):
                         notblacklisted += 1
                         try:
                             self.change_to_s3(context, resource)
-                        except logic.ValidationError as e:
+                        except logic.ValidationError:
                             validation_errors += 1
                             pkg_crashes.add(pkg['id'])
                         except KeyError:
                             key_errors += 1
                             pkg_crashes.add(pkg['id'])
-                        except Exception as e:
-                            other_errors.append(e)
+                        except Exception as error:
+                            other_errors.append(error)
                             other_errors.append(pkg['id'])
                             pkg_crashes.add(pkg['id'])
                     else:
@@ -78,8 +84,12 @@ class MigrateToS3(cli.CkanCommand):
         print "BLACKLISTED =", blacklisted
         print "EXTENSIONS SEEN =", extensions_seen
 
-
-    def change_to_s3(self,context,resource):
+    def change_to_s3(self, context, resource):
+        '''
+        1. Uploads resource to S3
+        2. Peforms resource_update
+        3. Uploads the updated zipfiles to S3
+        '''
         upload.migrate_to_s3_upload(context, resource)
-        toolkit.get_action('resource_update')(context,resource)
+        toolkit.get_action('resource_update')(context, resource)
         upload.upload_zipfiles_to_s3(context, resource)

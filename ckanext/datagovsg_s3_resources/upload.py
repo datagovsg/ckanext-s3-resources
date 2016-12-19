@@ -1,33 +1,58 @@
-from slugify import slugify
-from pylons import config
-import ckan.plugins.toolkit as toolkit
-import ckan.lib.uploader as uploader
-import boto3
-import yaml
-import paste.fileapp
+'''
+upload.py
+
+Contains functions that upload the resources/zipfiles to S3.
+
+Also contains the MetadataYAMLDumper class to generate the metadata for zipfiles.
+'''
+import os
 import StringIO
 import zipfile
-import requests
 import mimetypes
-import cgi
 import collections
-import os
+
+from slugify import slugify
+from pylons import config
+import boto3
+import yaml
+import requests
+
+import ckan.plugins.toolkit as toolkit
+import ckan.lib.uploader as uploader
+
 
 def setup_s3():
+    '''
+    setup_s3 - Grabs the required info from config file and initializes S3 connection
+    '''
     aws_access_key_id = config.get('ckan.s3_resources.s3_aws_access_key_id')
     aws_secret_access_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
     aws_region_name = config.get('ckan.s3_resources.s3_aws_region_name')
     if aws_region_name:
-        s3 = boto3.resource('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key, region_name=aws_region_name)
+        s3 = boto3.resource('s3',
+                            aws_access_key_id=aws_access_key_id,
+                            aws_secret_access_key=aws_secret_access_key,
+                            region_name=aws_region_name)
     else:
-        s3 = boto3.resource('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+        s3 = boto3.resource('s3',
+                            aws_access_key_id=aws_access_key_id,
+                            aws_secret_access_key=aws_secret_access_key)
     return s3
-
+ 
 
 def upload_resource_to_s3(context, rsc):
-    # Init connection to s3
+    '''
+    upload_resource_to_s3
+
+    Uploads resource to S3 and modifies the following resource fields:
+    - 'upload'
+    - 'url_type'
+    - 'url'
+    '''
+
+    # Init connection to S3
     s3 = setup_s3()
-    
+
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
     bucket = s3.Bucket(bucket_name)
 
@@ -57,6 +82,15 @@ def upload_resource_to_s3(context, rsc):
 
 
 def migrate_to_s3_upload(context, resource):
+    '''
+    migrate_to_s3_upload
+
+    Uploads resource to S3 and destructively modifies the following resource fields:
+    - 'url_type'
+    - 'url'
+    '''
+
+    # Init connection to S3
     s3 = setup_s3()
 
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
@@ -69,7 +103,7 @@ def migrate_to_s3_upload(context, resource):
         response = session.get(
             resource.get('url', ''), timeout=10)
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException:
         toolkit.abort(404, toolkit._(
             'Resource data not found'))
 
@@ -95,6 +129,15 @@ def migrate_to_s3_upload(context, resource):
 
 
 def upload_zipfiles_to_s3(context, new_rsc):
+    '''
+    upload_zipfiles_to_s3
+
+    Uploads resource to S3 and modifies the following resource fields:
+    - 'upload'
+    - 'url_type'
+    - 'url'
+    '''
+
     # Get resource's package
     pkg = toolkit.get_action('package_show')(context, {'id': new_rsc['package_id']})
 
@@ -124,10 +167,13 @@ def upload_zipfiles_to_s3(context, new_rsc):
     # Find extension and content-type of the resource
     content_type, content_enc = mimetypes.guess_type(
         new_rsc.get('url', ''))
-    if content_type != None:
+    if content_type is not None:
         extension = mimetypes.guess_extension(content_type)
     else:
         extension = ''
+
+    # Get timestamp of the update to append to the filenames
+    utc_datetime_now = context['s3_upload_timestamp']
 
     # Get blacklist from config
     blacklist = config.get('ckan.s3_resources.upload_filetype_blacklist').split()
@@ -163,16 +209,15 @@ def upload_zipfiles_to_s3(context, new_rsc):
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
     bucket = s3.Bucket(bucket_name)
 
-    # Note that when dealing with the zipfiles we should already have all the resources uploaded to S3
+    # At this point, we should already have all the resources uploaded to S3
     # Attempt to download the resource from url
     try:
         response = session.get(
             new_rsc.get('url', ''), timeout=10)
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException:
         toolkit.abort(404, toolkit._(
             'Resource data not found'))
-
 
     # Only upload resource zip file if it is not blacklisted
     if extension.lower()[1:] not in blacklist:
@@ -190,8 +235,8 @@ def upload_zipfiles_to_s3(context, new_rsc):
             response.content)
 
         # Write new_rsc file into the updated resource zip
-        new_rsc_zip_archive.writestr(slugify(new_rsc.get('name'), to_lower=True) + extension, 
-            response.content)
+        new_rsc_zip_archive.writestr(slugify(new_rsc.get('name'), to_lower=True) + extension,
+                                     response.content)
 
         # Upload updated resource zip
         new_rsc_zip_archive.close()
@@ -207,8 +252,15 @@ def upload_zipfiles_to_s3(context, new_rsc):
 
     # Upload package zip
     package_zip_archive.close()
-    package_file_name = pkg.get('name') + '/' + pkg.get('name') + '.zip'
-    obj = bucket.put_object(Key=package_file_name, Body=package_buff.getvalue(), ContentType='application/zip')
+    package_file_name = (pkg.get('name') 
+                         + '/' 
+                         + pkg.get('name') 
+                         + utc_datetime_now 
+                         + '.zip')
+    obj = bucket.put_object(
+        Key=package_file_name,
+        Body=package_buff.getvalue(),
+        ContentType='application/zip')
     obj.Acl().put(ACL='public-read')
 
     # Upload timestamped files to archive directory
@@ -224,18 +276,21 @@ def upload_zipfiles_to_s3(context, new_rsc):
 
 
 class MetadataYAMLDumper(yaml.SafeDumper):
+    '''
+    class MetadataYAMLDumper
 
+    Used to generate metadata for the CKAN resources/packages
+    '''
     def __init__(self, *args, **kws):
         kws['default_flow_style'] = False
         kws['explicit_start'] = True
         kws['line_break'] = '\r\n'
 
-        return super(MetadataYAMLDumper, self).__init__(*args, **kws)
+        super(MetadataYAMLDumper, self).__init__(*args, **kws)
 
     # add the first indentation for list
     def expect_block_sequence(self):
         self.increase_indent(flow=False, indentless=False)
-
         self.state = self.expect_first_block_sequence_item
 
     # modify this to add extra line breaks
@@ -253,15 +308,15 @@ class MetadataYAMLDumper(yaml.SafeDumper):
             self.expect_node(sequence=True)
 
     # represent OrderedDict
-    def represent_odict(dumper, data):
+    def represent_odict(self, data):
         value = list()
         node = yaml.nodes.MappingNode(
             'tag:yaml.org,2002:map', value, flow_style=None)
-        if dumper.alias_key is not None:
-            dumper.represented_objects[dumper.alias_key] = node
+        if self.alias_key is not None:
+            self.represented_objects[self.alias_key] = node
         for item_key, item_value in data.items():
-            node_key = dumper.represent_data(item_key)
-            node_value = dumper.represent_data(item_value)
+            node_key = self.represent_data(item_key)
+            node_value = self.represent_data(item_value)
             value.append((node_key, node_value))
         node.flow_style = False
         return node
@@ -276,11 +331,13 @@ class MetadataYAMLDumper(yaml.SafeDumper):
 MetadataYAMLDumper.add_representer(
     collections.OrderedDict, MetadataYAMLDumper.represent_odict)
 
+
 # Helper functions
 
 def prettify_json(json):
+    '''prettify_json - removes leading and trailing whitespace'''
     if isinstance(json, dict):
-        for key, value in json.items():
+        for key in json.keys():
             prettified_name = key.replace('_', ' ').title()
             json[prettified_name] = prettify_json(json.pop(key))
     elif isinstance(json, list):
@@ -290,13 +347,17 @@ def prettify_json(json):
         json = json.strip(' \t\n\r')
     return json
 
+
 def is_downloadable_url(url):
+    '''is_downloadable_url - check if url is downloadable'''
     content_type, content_enc = mimetypes.guess_type(url)
     if content_type and content_type != 'text/html':
         return True
     return False
 
+
 def config_exists():
+    '''config_exists - '''
     access_key = config.get('ckan.s3_resources.s3_aws_access_key_id')
     secret_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
@@ -304,9 +365,8 @@ def config_exists():
     archive = config.get('ckan.s3_resources.archive_old_resources')
     blacklist = config.get('ckan.s3_resources.upload_filetype_blacklist')
 
-    return (access_key == None or
-        secret_key == None or
-        bucket_name == None or
-        url == None or
-        archive == None or
-        blacklist == None)
+    return not (access_key is None or
+                secret_key is None or
+                bucket_name is None or
+                url is None or
+                blacklist is None)

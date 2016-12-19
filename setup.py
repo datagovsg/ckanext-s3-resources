@@ -78,7 +78,7 @@ setup(
     # pip to create the appropriate form of executable for the target platform.
     entry_points='''
         [ckan.plugins]
-        datagovsg_s3_resources=ckanext.datagovsg_s3_resources.plugin:Datagovsg_S3_ResourcesPlugin
+        datagovsg_s3_resources=ckanext.datagovsg_s3_resources.plugin:DatagovsgS3ResourcesPlugin
         [paste.paster_command]
         migrate_s3 = ckanext.datagovsg_s3_resources.commands:MigrateToS3
     ''',
