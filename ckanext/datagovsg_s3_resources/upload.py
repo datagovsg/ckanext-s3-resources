@@ -345,7 +345,7 @@ def is_downloadable_url(url):
 
 
 def config_exists():
-    '''config_exists - '''
+    '''config_exists - checks for the required s3 config options'''
     access_key = config.get('ckan.s3_resources.s3_aws_access_key_id')
     secret_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
     bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
