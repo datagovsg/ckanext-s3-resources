@@ -25,7 +25,7 @@ class S3ResourcesPackageController(PackageController):
     Handles package and resource downloads.
     '''
     def __init__(self):
-        self.s3_url = config.get('ckan.s3_resources.s3_url')
+        self.s3_url_prefix = config.get('ckan.datagovsg_s3_resources.s3_url_prefix')
 
     # download the whole dataset together with the metadata
     def package_download(self, id):
@@ -43,9 +43,14 @@ class S3ResourcesPackageController(PackageController):
             toolkit.abort(401, toolkit._(
                 'Unauthorized to read dataset %s') % id)
 
+        # Get package and redirect the request to the URL for the package zip
         pkg = toolkit.get_action('package_show')(context, {'id': id})
-        zip_url = self.s3_url + pkg['name'] + '/' + pkg['name'] + '.zip'
-        redirect(zip_url)
+        redirect(self.s3_url_prefix
+                 + pkg['name']
+                 + '/'
+                 + pkg['name']
+                 + '.zip'
+        )
 
     # override the default resource_download to download the zip file instead
     def resource_download(self, id, resource_id):
@@ -64,6 +69,8 @@ class S3ResourcesPackageController(PackageController):
         except toolkit.NotAuthorized:
             toolkit.abort(401, _('Unauthorized to read resource %s') % resource_id)
 
+        # Check where the resource is located
+        # If rsc.get('url_type') == 'upload' then the resource is in CKAN file system
         if rsc.get('url_type') == 'upload':
             upload = uploader.ResourceUpload(rsc)
             filepath = upload.get_path(rsc['id'])
@@ -73,13 +80,18 @@ class S3ResourcesPackageController(PackageController):
             except OSError:
                 abort(404, _('Resource data not found'))
             response.headers.update(dict(headers))
-            content_type, content_enc = mimetypes.guess_type(rsc.get('url', ''))
+            content_type, _ = mimetypes.guess_type(rsc.get('url', ''))
             if content_type:
                 response.headers['Content-Type'] = content_type
             response.status = status
             return app_iter
+        # If resource is not in CKAN file system, it should have a URL directly to the resource
         elif not 'url' in rsc:
             abort(404, _('No download is available'))
 
+        # Replaces the resource URL extension with .zip
+        # os.path.splitext returns a list with two elements, the file path and the extension
         zip_url = os.path.splitext(rsc['url'])[0] + '.zip'
+
+        # Redirect the request to the URL for the resource zip
         redirect(zip_url)

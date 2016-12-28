@@ -21,13 +21,13 @@ import ckan.plugins.toolkit as toolkit
 import ckan.lib.uploader as uploader
 
 
-def setup_s3():
+def setup_s3_bucket():
     '''
-    setup_s3 - Grabs the required info from config file and initializes S3 connection
+    setup_s3_bucket - Grabs the required info from config file and initializes S3 connection
     '''
-    aws_access_key_id = config.get('ckan.s3_resources.s3_aws_access_key_id')
-    aws_secret_access_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
-    aws_region_name = config.get('ckan.s3_resources.s3_aws_region_name')
+    aws_access_key_id = config.get('ckan.datagovsg_s3_resources.s3_aws_access_key_id')
+    aws_secret_access_key = config.get('ckan.datagovsg_s3_resources.s3_aws_secret_access_key')
+    aws_region_name = config.get('ckan.datagovsg_s3_resources.s3_aws_region_name')
     if aws_region_name:
         s3 = boto3.resource('s3',
                             aws_access_key_id=aws_access_key_id,
@@ -37,10 +37,14 @@ def setup_s3():
         s3 = boto3.resource('s3',
                             aws_access_key_id=aws_access_key_id,
                             aws_secret_access_key=aws_secret_access_key)
-    return s3
+
+    bucket_name = config.get('ckan.datagovsg_s3_resources.s3_bucket_name')
+    bucket = s3.Bucket(bucket_name)
+
+    return bucket
  
 
-def upload_resource_to_s3(context, rsc):
+def upload_resource_to_s3(context, resource):
     '''
     upload_resource_to_s3
 
@@ -51,32 +55,29 @@ def upload_resource_to_s3(context, rsc):
     '''
 
     # Init connection to S3
-    s3 = setup_s3()
-
-    bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
-    bucket = s3.Bucket(bucket_name)
+    bucket = setup_s3_bucket()
 
     # Get content type and extension
-    content_type, content_enc = mimetypes.guess_type(
-        rsc.get('url', ''))
+    content_type, _ = mimetypes.guess_type(
+        resource.get('url', ''))
     extension = mimetypes.guess_extension(content_type)
 
     # Upload to S3
-    pkg = toolkit.get_action('package_show')(context, {'id': rsc['package_id']})
+    pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
     utc_datetime_now = context['s3_upload_timestamp']
-    s3_filepath = (pkg.get('name') + '/' + slugify(rsc.get('name'), to_lower=True)
+    s3_filepath = (pkg.get('name') + '/' + slugify(resource.get('name'), to_lower=True)
                    + utc_datetime_now + extension)
-    rsc['upload'].file.seek(0)
+    resource['upload'].file.seek(0)
     bucket.Object(s3_filepath).delete()
     obj = bucket.put_object(Key=s3_filepath,
-                            Body=rsc['upload'].file,
+                            Body=resource['upload'].file,
                             ContentType=content_type)
     obj.Acl().put(ACL='public-read')
 
     # Modify fields in resource
-    rsc['upload'] = ''
-    rsc['url_type'] = 's3'
-    rsc['url'] = config.get('ckan.s3_resources.s3_url') + s3_filepath
+    resource['upload'] = ''
+    resource['url_type'] = 's3'
+    resource['url'] = config.get('ckan.datagovsg_s3_resources.s3_url_prefix') + s3_filepath
 
 
 def migrate_to_s3_upload(context, resource):
@@ -89,10 +90,7 @@ def migrate_to_s3_upload(context, resource):
     '''
 
     # Init connection to S3
-    s3 = setup_s3()
-
-    bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
-    bucket = s3.Bucket(bucket_name)
+    bucket = setup_s3_bucket()
 
     # Start session to download files
     session = requests.Session()
@@ -106,12 +104,12 @@ def migrate_to_s3_upload(context, resource):
             'Resource data not found'))
 
     # Get content type and extension
-    content_type, content_enc = mimetypes.guess_type(
+    content_type, _ = mimetypes.guess_type(
         resource.get('url', ''))
     extension = mimetypes.guess_extension(content_type)
 
     pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
-    utc_datetime_now = context['s3_upload_timestamp']
+    utc_datetime_now = context['s3_upload_timestamp']  
     s3_filepath = (pkg.get('name') 
                    + '/' 
                    + slugify(resource.get('name'), to_lower=True) 
@@ -123,21 +121,88 @@ def migrate_to_s3_upload(context, resource):
     obj.Acl().put(ACL='public-read')
 
     resource['url_type'] = 's3'
-    resource['url'] = config.get('ckan.s3_resources.s3_url') + s3_filepath
+    resource['url'] = config.get('ckan.datagovsg_s3_resources.s3_url_prefix') + s3_filepath
 
 
-def upload_zipfiles_to_s3(context, new_rsc):
+def upload_resource_zipfile_to_s3(context, resource):
+    '''
+    upload_resource_zipfile_to_s3 - Uploads the resource zip file to S3
+    '''
+    
+    # Get resource's package
+    pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
+
+    # Initialize resource zip file
+    resource_buff = StringIO.StringIO()
+    resource_zip_archive = zipfile.ZipFile(resource_buff, mode='w')
+
+    # Initialize metadata
+    metadata = toolkit.get_action(
+        'package_metadata_show')(data_dict={'id': pkg['id']})
+    metadata_yaml_buff = StringIO.StringIO()
+    metadata_yaml_buff.write(unicode("# Metadata for %s\r\n" % pkg[
+                             "title"]).encode('ascii', 'ignore'))
+    yaml.dump(prettify_json(metadata),
+              metadata_yaml_buff, Dumper=MetadataYAMLDumper)
+
+    # Write metadata to package and updated resource zip
+    resource_zip_archive.writestr(
+        'metadata-' + pkg.get('name') + '.txt', metadata_yaml_buff.getvalue())
+
+    # Get timestamp of the update to append to the filenames
+    utc_datetime_now = context['s3_upload_timestamp']
+
+    # Obtain extension type of the resource
+    resource_extension = os.path.splitext(resource['url'])[1]
+
+    # Case 1: Resource is not on s3 yet, need to download from CKAN
+    if resource.get('url_type') == 'upload':
+        upload = uploader.ResourceUpload(resource)
+        filepath = upload.get_path(resource['id'])
+        resource_zip_archive.write(
+            filepath,
+            slugify(resource['name'], to_lower=True) + utc_datetime_now + resource_extension
+        )
+
+    # Case 2: Resource exists on S3, download into package zip file
+    elif resource.get('url_type') == 's3':
+        # Try to download the resource from the provided URL
+        try:
+            session = requests.Session()
+            response = session.get(resource.get('url', ''), timeout=10)
+        except requests.exceptions.RequestException:
+            toolkit.abort(404, toolkit._('Resource data not found'))
+
+        resource_zip_archive.writestr(
+            slugify(resource.get('name'), to_lower=True) + utc_datetime_now + resource_extension,
+            response.content
+        )
+
+    # Initialize connection to S3
+    bucket = setup_s3_bucket()
+
+    # Upload the resource zip to S3
+    resource_zip_archive.close()
+    resource_filename = (pkg.get('name')
+                         + '/'
+                         + slugify(resource.get('name'), to_lower=True)
+                         + utc_datetime_now
+                         + '.zip')
+    obj = bucket.put_object(
+        Key=resource_filename,
+        Body=resource_buff.getvalue(),
+        ContentType='application/zip'
+    )
+    # Set permissions of the S3 object to be readable by public
+    obj.Acl().put(ACL='public-read')
+
+
+def upload_package_zipfile_to_s3(context, pkg):
     '''
     upload_zipfiles_to_s3
 
-    Uploads resource to S3 and modifies the following resource fields:
-    - 'upload'
-    - 'url_type'
-    - 'url'
+    Uploads package zipfile to S3
     '''
-
-    # Get resource's package
-    pkg = toolkit.get_action('package_show')(context, {'id': new_rsc['package_id']})
 
     # Obtain package and package metadata
     metadata = toolkit.get_action(
@@ -148,7 +213,6 @@ def upload_zipfiles_to_s3(context, new_rsc):
     package_zip_archive = zipfile.ZipFile(package_buff, mode='w')
 
     # Initialize metadata
-    # Package and resources have the same metadata file
     metadata_yaml_buff = StringIO.StringIO()
     metadata_yaml_buff.write(unicode("# Metadata for %s\r\n" % pkg[
                              "title"]).encode('ascii', 'ignore'))
@@ -162,105 +226,63 @@ def upload_zipfiles_to_s3(context, new_rsc):
     # Start session to make requests: for downloading files from S3
     session = requests.Session()
 
-    # Find extension and content-type of the resource
-    content_type, content_enc = mimetypes.guess_type(
-        new_rsc.get('url', ''))
-    if content_type is not None:
-        extension = mimetypes.guess_extension(content_type)
-    else:
-        extension = ''
-
     # Get timestamp of the update to append to the filenames
     utc_datetime_now = context['s3_upload_timestamp']
 
-    # Get blacklist from config
-    blacklist = config.get('ckan.s3_resources.upload_filetype_blacklist').split()
-    blacklist = [t.lower() for t in blacklist]
+    # Iterate over resources, downloading and storing them in the package zip file
+    for rsc in pkg.get('resources'):
+        # Case 1: Resource is uploaded to CKAN server
+        if rsc.get('url_type') == 'upload':
+            upload = uploader.ResourceUpload(rsc)
+            filepath = upload.get_path(rsc['id'])
+            rsc_extension = os.path.splitext(rsc['url'])[1]
+            package_zip_archive.write(filepath, slugify(
+                rsc['name'], to_lower=True) + utc_datetime_now + rsc_extension)
 
-    if pkg.get('resources'):
-        # Iterate over resources, downloading and storing them in the package zip file
-        for rsc in pkg['resources']:
-            # Check if resource format is blacklisted
-            if rsc['format'] not in blacklist:
-                # Case 1: Resource is not on s3 yet, need to download from CKAN
-                if rsc.get('url_type') == 'upload':
-                    upload = uploader.ResourceUpload(rsc)
-                    filepath = upload.get_path(rsc['id'])
-                    rsc_extension = os.path.splitext(rsc['url'])[1]
-                    package_zip_archive.write(filepath, slugify(
-                        rsc['name'], to_lower=True) + rsc_extension)
-                # Case 2: Resource exists on S3, download into package zip file
-                elif is_downloadable_url(rsc.get('url', '')):
-                    # Try to download the resource from the provided URL
-                    try:
-                        response = session.get(rsc.get('url', ''), timeout=10)
-                    except requests.exceptions.RequestException as e:
-                        toolkit.abort(404, toolkit._('Resource data not found'))
+        # Case 2: Resource is uploaded to S3
+        elif rsc.get('url_type') == 's3':
+            # Try to download the resource from the S3 URL
+            try:
+                response = session.get(rsc.get('url', ''), timeout=10)
+            except requests.exceptions.RequestException:
+                toolkit.abort(404, toolkit._('Resource data not found'))
 
-                    rsc_extension = os.path.splitext(rsc['url'])[1]
-                    package_zip_archive.writestr(
-                        slugify(rsc.get('name'), to_lower=True) + rsc_extension,
-                        response.content)
+            rsc_extension = os.path.splitext(rsc['url'])[1]
+            package_zip_archive.writestr(
+                slugify(rsc.get('name'), to_lower=True) + utc_datetime_now + rsc_extension,
+                response.content)
 
-    # Initialize connection to s3
-    s3 = setup_s3()
-    bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
-    bucket = s3.Bucket(bucket_name)
+    # Initialize connection to S3
+    bucket = setup_s3_bucket()
 
-    # At this point, we should already have all the resources uploaded to S3
-    # Attempt to download the resource from url
-    try:
-        response = session.get(
-            new_rsc.get('url', ''), timeout=10)
-
-    except requests.exceptions.RequestException:
-        toolkit.abort(404, toolkit._(
-            'Resource data not found'))
-
-    # Only upload resource zip file if it is not blacklisted
-    if extension.lower()[1:] not in blacklist:
-        # Initialize resource zip file
-        new_rsc_buff = StringIO.StringIO()
-        new_rsc_zip_archive = zipfile.ZipFile(new_rsc_buff, mode='w')
-
-        # Write metadata to resource zip
-        new_rsc_zip_archive.writestr(
-            'metadata-' + pkg.get('name') + '.txt', metadata_yaml_buff.getvalue())
-
-        # Write new_rsc file into package zip
-        package_zip_archive.writestr(
-            slugify(new_rsc.get('name'), to_lower=True) + extension,
-            response.content)
-
-        # Write new_rsc file into the updated resource zip
-        new_rsc_zip_archive.writestr(slugify(new_rsc.get('name'), to_lower=True) + extension,
-                                     response.content)
-
-        # Upload updated resource zip
-        new_rsc_zip_archive.close()
-        file_name = (pkg.get('name') 
-                     + '/' 
-                     + slugify(new_rsc.get('name'), to_lower=True) 
-                     + utc_datetime_now 
-                     + '.zip')
-        obj = bucket.put_object(
-            Key=file_name,
-            Body=new_rsc_buff.getvalue(),
-            ContentType='application/zip')
-        obj.Acl().put(ACL='public-read')
-
-    # Upload package zip
+    # Upload package zip to S3
     package_zip_archive.close()
-    package_file_name = (pkg.get('name') 
-                         + '/' 
-                         + pkg.get('name') 
-                         + utc_datetime_now 
+    package_file_name = (pkg.get('name')
+                         + '/'
+                         + pkg.get('name')
                          + '.zip')
     obj = bucket.put_object(
         Key=package_file_name,
         Body=package_buff.getvalue(),
-        ContentType='application/zip')
+        ContentType='application/zip'
+    )
+    # Set object permissions to public readable
     obj.Acl().put(ACL='public-read')
+            
+
+
+def is_blacklisted(resource):
+    '''is_blacklisted - Check if the resource type is blacklisted'''
+    content_type, _ = mimetypes.guess_type(resource.get('url', ''))
+    if content_type is not None:
+        extension = mimetypes.guess_extension(content_type)
+        blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist').split()
+        blacklist = [t.lower() for t in blacklist]
+        # ignore leading dot in extension
+        return extension.lower()[1:] in blacklist
+
+    # If cannot automatically detect content_type, assume blacklisted
+    return True
 
 
 class MetadataYAMLDumper(yaml.SafeDumper):
@@ -276,13 +298,13 @@ class MetadataYAMLDumper(yaml.SafeDumper):
 
         super(MetadataYAMLDumper, self).__init__(*args, **kws)
 
-    # add the first indentation for list
     def expect_block_sequence(self):
+        '''expect_block_sequence - add the first indentation for list'''
         self.increase_indent(flow=False, indentless=False)
         self.state = self.expect_first_block_sequence_item
 
-    # modify this to add extra line breaks
     def expect_block_sequence_item(self, first=False):
+        '''expect_block_sequence_item - modify this to add extra line breaks'''
         if not first and isinstance(self.event, yaml.SequenceEndEvent):
             self.indent = self.indents.pop()
             self.state = self.states.pop()
@@ -295,8 +317,8 @@ class MetadataYAMLDumper(yaml.SafeDumper):
             self.states.append(self.expect_block_sequence_item)
             self.expect_node(sequence=True)
 
-    # represent OrderedDict
     def represent_odict(self, data):
+        '''represent_odict - represent OrderedDict'''
         value = list()
         node = yaml.nodes.MappingNode(
             'tag:yaml.org,2002:map', value, flow_style=None)
@@ -309,8 +331,8 @@ class MetadataYAMLDumper(yaml.SafeDumper):
         node.flow_style = False
         return node
 
-    # single quotes
     def choose_scalar_style(self):
+        '''choose_scalar_style - single quotes'''
         is_dict_key = self.states[-1] == self.expect_block_mapping_simple_value
         if is_dict_key:
             return None
@@ -338,7 +360,7 @@ def prettify_json(json):
 
 def is_downloadable_url(url):
     '''is_downloadable_url - check if url is downloadable'''
-    content_type, content_enc = mimetypes.guess_type(url)
+    content_type, _ = mimetypes.guess_type(url)
     if content_type and content_type != 'text/html':
         return True
     return False
@@ -346,11 +368,11 @@ def is_downloadable_url(url):
 
 def config_exists():
     '''config_exists - checks for the required s3 config options'''
-    access_key = config.get('ckan.s3_resources.s3_aws_access_key_id')
-    secret_key = config.get('ckan.s3_resources.s3_aws_secret_access_key')
-    bucket_name = config.get('ckan.s3_resources.s3_bucket_name')
-    url = config.get('ckan.s3_resources.s3_url')
-    blacklist = config.get('ckan.s3_resources.upload_filetype_blacklist')
+    access_key = config.get('ckan.datagovsg_s3_resources.s3_aws_access_key_id')
+    secret_key = config.get('ckan.datagovsg_s3_resources.s3_aws_secret_access_key')
+    bucket_name = config.get('ckan.datagovsg_s3_resources.s3_bucket_name')
+    url = config.get('ckan.datagovsg_s3_resources.s3_url_prefix')
+    blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist')
 
     return not (access_key is None or
                 secret_key is None or

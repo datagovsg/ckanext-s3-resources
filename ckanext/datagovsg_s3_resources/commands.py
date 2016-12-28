@@ -7,7 +7,7 @@ import ckan.plugins.toolkit as toolkit
 import ckan.logic as logic
 from pylons import config
 
-import upload
+import ckanext.datagovsg_s3_resources.upload as upload
 
 
 class MigrateToS3(cli.CkanCommand):
@@ -37,17 +37,29 @@ class MigrateToS3(cli.CkanCommand):
         utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H:%M:%SZ")
         context['s3_upload_timestamp'] = utc_datetime_now
 
+        # dataset_names (list) - list of dataset names
+        # key_errors (int) - count of key errors encountered during migration
+        # validation_errors (int) - count of validation errors encountered during migration
+        # other_errors_list (list) - list of (non-key and non-validation) errors encountered during migration
+        # pkg_crashes (set) - set of package IDs of packages that encountered errors during migration
         dataset_names = toolkit.get_action('package_list')(context, {})
         key_errors = 0
         validation_errors = 0
+        other_errors_list = []
         pkg_crashes = set()
-        other_errors = []
 
-        blacklist = config.get('ckan.s3_resources.upload_filetype_blacklist').split()
+        # blacklist (list) - list of filetypes that we want to avoid uploading
+        # Obtain the space separated string from config, then split to obtain a list
+        # and convert elements to lowercase
+        blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist', '').split()
         blacklist = [t.lower() for t in blacklist]
 
-        blacklisted = 0
-        notblacklisted = 0
+        # blacklisted (list) - Resources that have blacklisted filetypes. 
+        #                      List of dicts with two fields: 'resource_id' and 'extension'
+        # not_blacklist (int) - count of resources that have blacklisted filetypes
+        # extensions_seen (set) - set of all filetypes that exist in our database
+        blacklisted = []
+        not_blacklisted = 0
         extensions_seen = set()
 
         for dataset_name in dataset_names:
@@ -58,7 +70,7 @@ class MigrateToS3(cli.CkanCommand):
                     extension = resource['format'].lower()
                     extensions_seen.add(extension)
                     if extension not in blacklist:
-                        notblacklisted += 1
+                        not_blacklisted += 1
                         try:
                             self.change_to_s3(context, resource)
                         except logic.ValidationError:
@@ -68,19 +80,18 @@ class MigrateToS3(cli.CkanCommand):
                             key_errors += 1
                             pkg_crashes.add(pkg['id'])
                         except Exception as error:
-                            other_errors.append(error)
-                            other_errors.append(pkg['id'])
+                            other_errors_list.append({'id': pkg['id'], 'error': error})
                             pkg_crashes.add(pkg['id'])
                     else:
-                        blacklisted += 1
+                        blacklisted.append({'resource_id': resource['id'], 'id': extension})
 
         print "NUMBER OF KEY ERROR CRASHES =", key_errors
         print "NUMBER OF VALIDATION ERROR CRASHES =", validation_errors
-        print "NUMBER OF OTHER ERROR CRASHES =", len(other_errors)
+        print "NUMBER OF OTHER ERROR CRASHES =", len(other_errors_list)
         print "NUMBER OF PACKAGE CRASHES =", len(pkg_crashes)
         print "PACKAGE_IDs =", pkg_crashes
-        print "OTHER ERRORS =", other_errors
-        print "NOT BLACKLISTED =", notblacklisted
+        print "OTHER ERRORS =", other_errors_list
+        print "NOT BLACKLISTED =", not_blacklisted
         print "BLACKLISTED =", blacklisted
         print "EXTENSIONS SEEN =", extensions_seen
 

@@ -10,15 +10,15 @@ This extension can be used to upload your CKAN resources to AWS S3 instead of th
 
 For the extension to work, you need to ensure that the following configuration options have been set in your configuration file `*.ini`:
 
-* `ckan.s3_resources.s3_aws_access_key_id` - AWS access key ID. Obtained from AWS.
-* `ckan.s3_resources.s3_aws_secret_access_key` - AWS secret access key ID. Obtained from AWS.
-* `ckan.s3_resources.s3_bucket_name` - The name of the bucket on S3 to upload the resources to.
-* `ckan.s3_resources.s3_url` - Base URL
+* `ckan.datagovsg_s3_resources.s3_aws_access_key_id` - AWS access key ID. Obtained from AWS.
+* `ckan.datagovsg_s3_resources.s3_aws_secret_access_key` - AWS secret access key ID. Obtained from AWS.
+* `ckan.datagovsg_s3_resources.s3_bucket_name` - The name of the bucket on S3 to upload the resources to.
+* `ckan.datagovsg_s3_resources.s3_url_prefix` - Base URL
     * Resource URLs will be in the form of `<base_url><package_name>/<resource_filename>`
     * Package zip URLs will be in the form of `<base_url><package_name>/<package_name>.zip`
-    * e.g. `ckan.s3_resources.s3_url = https://bucket-name.s3.amazonaws.com/`
-* `ckan.s3_resources.upload_filetype_blacklist` - A space separated list of file formats to ignore.
-    * e.g. `ckan.s3_resources.upload_filetype_blacklist = csv pdf xls`
+    * e.g. `ckan.datagovsg_s3_resources.s3_url_prefix = https://bucket-name.s3.amazonaws.com/`
+* `ckan.datagovsg_s3_resources.upload_filetype_blacklist` - A space separated list of file formats to ignore.
+    * e.g. `ckan.datagovsg_s3_resources.upload_filetype_blacklist = csv pdf xls`
 
 ## Migration
 
