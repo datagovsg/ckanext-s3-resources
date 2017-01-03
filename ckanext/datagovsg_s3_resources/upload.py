@@ -87,6 +87,8 @@ def migrate_to_s3_upload(context, resource):
     Uploads resource to S3 and destructively modifies the following resource fields:
     - 'url_type'
     - 'url'
+
+    Used for the paster command that migrates the database to S3
     '''
 
     # Init connection to S3

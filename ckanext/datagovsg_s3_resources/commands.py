@@ -34,8 +34,7 @@ class MigrateToS3(cli.CkanCommand):
             'ignore_auth': True
         }
         # Set timestamp for archiving
-        utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H:%M:%SZ")
-        context['s3_upload_timestamp'] = utc_datetime_now
+        context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H:%M:%SZ")
 
         # dataset_names (list) - list of dataset names
         # key_errors (int) - count of key errors encountered during migration
@@ -66,6 +65,9 @@ class MigrateToS3(cli.CkanCommand):
             pkg = toolkit.get_action('package_show')(context, {'id': dataset_name})
             if pkg.get('num_resources') > 0:
                 for resource in pkg.get('resources'):
+                    # If the resource is already uploaded to S3, don't reupload
+                    if resource['url_type'] == 's3':
+                        continue
                     # If filetype of resource is blacklisted, skip the upload to S3
                     extension = resource['format'].lower()
                     extensions_seen.add(extension)
