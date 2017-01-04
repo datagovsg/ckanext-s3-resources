@@ -56,9 +56,11 @@ class MigrateToS3(cli.CkanCommand):
         # blacklisted (list) - Resources that have blacklisted filetypes. 
         #                      List of dicts with two fields: 'resource_id' and 'extension'
         # not_blacklist (int) - count of resources that have blacklisted filetypes
+        # already_on_s3 (list) - List of resource IDs of resources that are already uploaded to S3
         # extensions_seen (set) - set of all filetypes that exist in our database
         blacklisted = []
         not_blacklisted = 0
+        already_on_s3 = []
         extensions_seen = set()
 
         for dataset_name in dataset_names:
@@ -67,6 +69,7 @@ class MigrateToS3(cli.CkanCommand):
                 for resource in pkg.get('resources'):
                     # If the resource is already uploaded to S3, don't reupload
                     if resource['url_type'] == 's3':
+                        already_on_s3.append(resource['id'])
                         continue
                     # If filetype of resource is blacklisted, skip the upload to S3
                     extension = resource['format'].lower()
@@ -93,6 +96,7 @@ class MigrateToS3(cli.CkanCommand):
         print "NUMBER OF PACKAGE CRASHES =", len(pkg_crashes)
         print "PACKAGE_IDs =", pkg_crashes
         print "OTHER ERRORS =", other_errors_list
+        print "ALREADY ON S3 =", already_on_s3
         print "NOT BLACKLISTED =", not_blacklisted
         print "BLACKLISTED =", blacklisted
         print "EXTENSIONS SEEN =", extensions_seen
