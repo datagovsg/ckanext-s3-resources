@@ -51,9 +51,10 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
 
         # Check if required config options exist
         if not upload.config_exists():
-            # Log a warning
+            # Log an error
             logger = logging.getLogger(__name__)
-            logger.info("Required S3 config options missing. Uploading to CKAN servers instead")
+            logger.error("Required S3 config options missing. Please check if required config options exist.")
+            raise Exception('Required S3 config options missing')
         else:
             # Set timestamp for archiving
             context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
@@ -76,9 +77,10 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
 
         # Check if required config options exist
         if not upload.config_exists():
-            # Log a warning
+            # Log an error
             logger = logging.getLogger(__name__)
-            logger.info("Required S3 config options missing. Uploading to CKAN servers instead")
+            logger.info("Required S3 config options missing. Please check if required config options exist.")
+            raise Exception('Required S3 config options missing')
         else:
             # Set timestamp for archiving
             context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")

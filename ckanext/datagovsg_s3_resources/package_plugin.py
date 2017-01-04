@@ -3,6 +3,8 @@
 DatagovsgS3ResourcesPackagePlugin
 Extends plugins.SingletonPlugin
 '''
+import datetime
+import logging
 
 from routes.mapper import SubMapper
 import ckan.plugins as plugins
@@ -42,7 +44,19 @@ class DatagovsgS3ResourcesPackagePlugin(plugins.SingletonPlugin):
     # IPackageController #########################################
     ##############################################################
 
+    def after_create(self, context, pkg_dict):
+        # Set timestamp for archiving
+        context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+
     def after_update(self, context, pkg_dict):
         '''after_update - uploads package zipfile to s3'''
-        upload.upload_package_zipfile_to_s3(context, pkg_dict)
+
+        # Check if required config options exist
+        if not upload.config_exists():
+            # Log an error
+            logger = logging.getLogger(__name__)
+            logger.error("Required S3 config options missing. Please check if required config options exist.")
+            raise Exception('Required S3 config options missing')
+        else:
+            upload.upload_package_zipfile_to_s3(context, pkg_dict)
  
