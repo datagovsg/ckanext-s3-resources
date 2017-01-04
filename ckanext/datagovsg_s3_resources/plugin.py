@@ -87,7 +87,9 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
 
             # Only upload to S3 if not blacklisted
             if not upload.is_blacklisted(resource):
-                upload.upload_resource_to_s3(context, resource)
+                # Check if there's any file to upload
+                if resource.get('upload', '') != '':
+                    upload.upload_resource_to_s3(context, resource)
             else:
                 # Log a warning
                 logger = logging.getLogger(__name__)
