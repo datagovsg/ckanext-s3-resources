@@ -222,12 +222,15 @@ def upload_resource_zipfile_to_s3(context, resource):
         logger.error(exception)
         raise exception
 
-def upload_package_zipfile_to_s3(context, pkg):
+def upload_package_zipfile_to_s3(context, pkg_dict):
     '''
     upload_zipfiles_to_s3
 
     Uploads package zipfile to S3
     '''
+
+    # Obtain package
+    pkg = toolkit.get_action('package_show')(data_dict={'id': pkg_dict['id']})
 
     # Obtain package and package metadata
     metadata = toolkit.get_action(
