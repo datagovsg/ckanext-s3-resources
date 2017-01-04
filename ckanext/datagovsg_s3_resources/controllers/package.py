@@ -7,6 +7,7 @@ import os
 
 import mimetypes
 from pylons import config
+from slugify import slugify
 
 import paste.fileapp
 import ckan.plugins.toolkit as toolkit
@@ -89,9 +90,10 @@ class S3ResourcesPackageController(PackageController):
         elif not 'url' in rsc:
             abort(404, _('No download is available'))
 
-        # Replaces the resource URL extension with .zip
-        # os.path.splitext returns a list with two elements, the file path and the extension
-        zip_url = os.path.splitext(rsc['url'])[0] + '.zip'
-
         # Redirect the request to the URL for the resource zip
-        redirect(zip_url)
+        pkg = toolkit.get_action('package_show')(context, {'id': id})
+        redirect(self.s3_url_prefix
+                 + pkg['name']
+                 + '/'
+                 + slugify(rsc.get('name'), to_lower=True)
+                 + '.zip')
