@@ -249,18 +249,14 @@ def upload_package_zipfile_to_s3(context, pkg):
     # Start session to make requests: for downloading files from S3
     session = requests.Session()
 
-    # Get timestamp of the update to append to the filenames
-    utc_datetime_now = context['s3_upload_timestamp']
-
     # Iterate over resources, downloading and storing them in the package zip file
     for rsc in pkg.get('resources'):
         # Case 1: Resource is uploaded to CKAN server
         if rsc.get('url_type') == 'upload':
             upload = uploader.ResourceUpload(rsc)
             filepath = upload.get_path(rsc['id'])
-            rsc_extension = os.path.splitext(rsc['url'])[1]
-            package_zip_archive.write(filepath, slugify(
-                rsc['name'], to_lower=True) + utc_datetime_now + rsc_extension)
+            filename = os.path.basename(rsc['url'])
+            package_zip_archive.write(filepath, filename)
 
         # Case 2: Resource is uploaded to S3
         elif rsc.get('url_type') == 's3':
@@ -270,10 +266,9 @@ def upload_package_zipfile_to_s3(context, pkg):
             except requests.exceptions.RequestException:
                 toolkit.abort(404, toolkit._('Resource data not found'))
 
-            rsc_extension = os.path.splitext(rsc['url'])[1]
-            package_zip_archive.writestr(
-                slugify(rsc.get('name'), to_lower=True) + utc_datetime_now + rsc_extension,
-                response.content)
+            filename = os.path.basename(rsc['url'])
+            package_zip_archive.writestr(filename, response.content)
+
 
     # Initialize connection to S3
     bucket = setup_s3_bucket()

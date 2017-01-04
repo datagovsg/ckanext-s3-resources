@@ -44,10 +44,6 @@ class DatagovsgS3ResourcesPackagePlugin(plugins.SingletonPlugin):
     # IPackageController #########################################
     ##############################################################
 
-    def after_create(self, context, pkg_dict):
-        # Set timestamp for archiving
-        context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
-
     def after_update(self, context, pkg_dict):
         '''after_update - uploads package zipfile to s3'''
 
