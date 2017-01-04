@@ -216,7 +216,7 @@ def upload_resource_zipfile_to_s3(context, resource):
     except Exception as exception:
         # Log the error and reraise the exception
         logger = logging.getLogger(__name__)
-        logger.error("Error uploading resource %s from package %s to S3" % (resource['name'], resource['package_id']))
+        logger.error("Error uploading resource %s zipfile to S3" % (resource['name']))
         logger.error(exception)
         raise exception
 
@@ -295,7 +295,7 @@ def upload_package_zipfile_to_s3(context, pkg):
     except Exception as exception:
         # Log the error and reraise the exception
         logger = logging.getLogger(__name__)
-        logger.error("Error uploading resource %s from package %s to S3" % (resource['name'], resource['package_id']))
+        logger.error("Error uploading package %s zip to S3" % (pkg['id']))
         logger.error(exception)
         raise exception            
 
