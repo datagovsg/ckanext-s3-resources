@@ -10,6 +10,7 @@ import StringIO
 import zipfile
 import mimetypes
 import collections
+import logging
 
 from slugify import slugify
 from pylons import config
@@ -68,11 +69,18 @@ def upload_resource_to_s3(context, resource):
     s3_filepath = (pkg.get('name') + '/' + slugify(resource.get('name'), to_lower=True)
                    + utc_datetime_now + extension)
     resource['upload'].file.seek(0)
-    bucket.Object(s3_filepath).delete()
-    obj = bucket.put_object(Key=s3_filepath,
-                            Body=resource['upload'].file,
-                            ContentType=content_type)
-    obj.Acl().put(ACL='public-read')
+    try:
+        bucket.Object(s3_filepath).delete()
+        obj = bucket.put_object(Key=s3_filepath,
+                                Body=resource['upload'].file,
+                                ContentType=content_type)
+        obj.Acl().put(ACL='public-read')
+    except Exception as exception:
+        # Log the error and reraise the exception
+        logger = logging.getLogger(__name__)
+        logger.error("Error uploading resource %s from package %s to S3" % (resource['name'], resource['package_id']))
+        logger.error(exception)
+        raise exception
 
     # Modify fields in resource
     resource['upload'] = ''
@@ -117,10 +125,17 @@ def migrate_to_s3_upload(context, resource):
                    + slugify(resource.get('name'), to_lower=True) 
                    + utc_datetime_now 
                    + extension)
-    obj = bucket.put_object(Key=s3_filepath,
-                            Body=response.content,
-                            ContentType=content_type)
-    obj.Acl().put(ACL='public-read')
+    try:
+        obj = bucket.put_object(Key=s3_filepath,
+                                Body=response.content,
+                                ContentType=content_type)
+        obj.Acl().put(ACL='public-read')
+    except Exception as exception:
+        # Log the error and reraise the exception
+        logger = logging.getLogger(__name__)
+        logger.error("Error uploading resource %s from package %s to S3" % (resource['name'], resource['package_id']))
+        logger.error(exception)
+        raise exception
 
     resource['url_type'] = 's3'
     resource['url'] = config.get('ckan.datagovsg_s3_resources.s3_url_prefix') + s3_filepath
@@ -190,14 +205,20 @@ def upload_resource_zipfile_to_s3(context, resource):
                          + slugify(resource.get('name'), to_lower=True)
                          + utc_datetime_now
                          + '.zip')
-    obj = bucket.put_object(
-        Key=resource_filename,
-        Body=resource_buff.getvalue(),
-        ContentType='application/zip'
-    )
-    # Set permissions of the S3 object to be readable by public
-    obj.Acl().put(ACL='public-read')
-
+    try:
+        obj = bucket.put_object(
+            Key=resource_filename,
+            Body=resource_buff.getvalue(),
+            ContentType='application/zip'
+        )
+        # Set permissions of the S3 object to be readable by public
+        obj.Acl().put(ACL='public-read')
+    except Exception as exception:
+        # Log the error and reraise the exception
+        logger = logging.getLogger(__name__)
+        logger.error("Error uploading resource %s from package %s to S3" % (resource['name'], resource['package_id']))
+        logger.error(exception)
+        raise exception
 
 def upload_package_zipfile_to_s3(context, pkg):
     '''
@@ -263,14 +284,20 @@ def upload_package_zipfile_to_s3(context, pkg):
                          + '/'
                          + pkg.get('name')
                          + '.zip')
-    obj = bucket.put_object(
-        Key=package_file_name,
-        Body=package_buff.getvalue(),
-        ContentType='application/zip'
-    )
-    # Set object permissions to public readable
-    obj.Acl().put(ACL='public-read')
-            
+    try:
+        obj = bucket.put_object(
+            Key=package_file_name,
+            Body=package_buff.getvalue(),
+            ContentType='application/zip'
+        )
+        # Set object permissions to public readable
+        obj.Acl().put(ACL='public-read')
+    except Exception as exception:
+        # Log the error and reraise the exception
+        logger = logging.getLogger(__name__)
+        logger.error("Error uploading resource %s from package %s to S3" % (resource['name'], resource['package_id']))
+        logger.error(exception)
+        raise exception            
 
 
 def is_blacklisted(resource):

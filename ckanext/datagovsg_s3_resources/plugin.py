@@ -64,7 +64,7 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
             else:
                 # Log a warning
                 logger = logging.getLogger(__name__)
-                logger.info("Resource %s from package %s has been blacklisted and not uploaded to S3." % (resource['name'], resource['package_id']))
+                logger.info("Resource %s from package %s is blacklisted and not uploaded to S3." % (resource['name'], resource['package_id']))
 
     def after_create(self, context, resource):
         '''Uploads resource zip file to S3
@@ -89,7 +89,7 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
             else:
                 # Log a warning
                 logger = logging.getLogger(__name__)
-                logger.info("Resource %s from package %s has been blacklisted and not uploaded to S3." % (resource['name'], resource['package_id']))
+                logger.info("Resource %s from package %s is blacklisted and not uploaded to S3." % (resource['name'], resource['package_id']))
 
     def after_update(self, context, resource):
         '''Uploads resource zip file to S3
