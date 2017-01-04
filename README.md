@@ -19,7 +19,7 @@ For the extension to work, you need to ensure that the following configuration o
     * Package zip URLs will be in the form of `<base_url><package_name>/<package_name>.zip`
     	* e.g. `https://bucket-name.s3.amazonaws.com/package-123/package-123.csv`
     * e.g. `ckan.datagovsg_s3_resources.s3_url_prefix = https://bucket-name.s3.amazonaws.com/`
-* `ckan.datagovsg_s3_resources.upload_filetype_blacklist` - A space separated list of file formats to ignore.
+* `ckan.datagovsg_s3_resources.upload_filetype_blacklist` (optional) - A space separated list of file formats to ignore.
     * e.g. `ckan.datagovsg_s3_resources.upload_filetype_blacklist = csv pdf xls`
 
 ## Migration

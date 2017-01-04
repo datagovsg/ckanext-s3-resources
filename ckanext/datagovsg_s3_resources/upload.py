@@ -312,7 +312,7 @@ def is_blacklisted(resource):
     content_type, _ = mimetypes.guess_type(resource.get('url', ''))
     if content_type is not None:
         extension = mimetypes.guess_extension(content_type)
-        blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist').split()
+        blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist', '').split()
         blacklist = [t.lower() for t in blacklist]
         # ignore leading dot in extension
         return extension.lower()[1:] in blacklist
@@ -408,10 +408,8 @@ def config_exists():
     secret_key = config.get('ckan.datagovsg_s3_resources.s3_aws_secret_access_key')
     bucket_name = config.get('ckan.datagovsg_s3_resources.s3_bucket_name')
     url = config.get('ckan.datagovsg_s3_resources.s3_url_prefix')
-    blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist')
 
     return not (access_key is None or
                 secret_key is None or
                 bucket_name is None or
-                url is None or
-                blacklist is None)
+                url is None)
