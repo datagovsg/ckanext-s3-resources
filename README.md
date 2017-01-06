@@ -22,6 +22,7 @@ For the extension to work, you need to ensure that the following configuration o
 * `ckan.datagovsg_s3_resources.upload_filetype_blacklist` (optional) - A space separated list of file formats to ignore.
     * e.g. `ckan.datagovsg_s3_resources.upload_filetype_blacklist = csv pdf xls`
 * `ckan.datagovsg_s3_resources.s3_aws_region_name` (optional) - Specify which AWS region to use.
+	* e.g. `ap-southeast-1`
 
 ## Migration
 
