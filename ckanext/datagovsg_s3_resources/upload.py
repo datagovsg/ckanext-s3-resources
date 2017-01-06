@@ -309,16 +309,9 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
 
 def is_blacklisted(resource):
     '''is_blacklisted - Check if the resource type is blacklisted'''
-    content_type, _ = mimetypes.guess_type(resource.get('url', ''))
-    if content_type is not None:
-        extension = mimetypes.guess_extension(content_type)
-        blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist', '').split()
-        blacklist = [t.lower() for t in blacklist]
-        # ignore leading dot in extension
-        return extension.lower()[1:] in blacklist
-
-    # If cannot automatically detect content_type, assume blacklisted
-    return True
+    blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist', '').split()
+    blacklist = [t.lower() for t in blacklist]
+    return resource.get('format').lower() in blacklist
 
 
 class MetadataYAMLDumper(yaml.SafeDumper):
