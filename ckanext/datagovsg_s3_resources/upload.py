@@ -311,7 +311,7 @@ def is_blacklisted(resource):
     '''is_blacklisted - Check if the resource type is blacklisted'''
     blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist', '').split()
     blacklist = [t.lower() for t in blacklist]
-    return resource.get('format').lower() in blacklist
+    return resource.get('format', '').lower() in blacklist
 
 
 class MetadataYAMLDumper(yaml.SafeDumper):
