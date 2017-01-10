@@ -1,5 +1,6 @@
 '''Adds paster command to migrate existing CKAN resources to S3'''
 import datetime
+import logging
 
 import ckan.model as model
 import ckan.lib.cli as cli
@@ -33,6 +34,8 @@ class MigrateToS3(cli.CkanCommand):
             'user': user['name'],
             'ignore_auth': True
         }
+        context['session'].expire_on_commit = False
+        
         # Set timestamp for archiving
         context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H:%M:%SZ")
 
@@ -63,12 +66,17 @@ class MigrateToS3(cli.CkanCommand):
         already_on_s3 = []
         extensions_seen = set()
 
+        # Obtain logger
+        logger = logging.getLogger(__name__)
+
         for dataset_name in dataset_names:
+            logger.info("Starting package migration to S3 for package %s" % dataset_name)
             pkg = toolkit.get_action('package_show')(context, {'id': dataset_name})
             if pkg.get('num_resources') > 0:
                 for resource in pkg.get('resources'):
                     # If the resource is already uploaded to S3, don't reupload
                     if resource['url_type'] == 's3':
+                        logger.info("Resource %s is already on S3, skipping to next resource." % resource.get('name', ''))
                         already_on_s3.append(resource['id'])
                         continue
                     # If filetype of resource is blacklisted, skip the upload to S3
@@ -77,29 +85,35 @@ class MigrateToS3(cli.CkanCommand):
                     if extension not in blacklist:
                         not_blacklisted += 1
                         try:
+                            logger.info("Attempting to migrate resource %s to S3..." % resource.get('name', ''))
                             self.change_to_s3(context, resource)
+                            logger.info("Successfully migrated resource %s to S3." % resource.get('name', ''))
                         except logic.ValidationError:
+                            logger.info("Validation Error when migrating resource %s" % resource.get('name', ''))
                             validation_errors += 1
                             pkg_crashes.add(pkg['id'])
                         except KeyError:
+                            logger.info("Key Error when migrating resource %s" % resource.get('name', ''))
                             key_errors += 1
                             pkg_crashes.add(pkg['id'])
                         except Exception as error:
+                            logger.info("Error when migrating resource %s - %s" % (resource.get('name', ''), error))
                             other_errors_list.append({'id': pkg['id'], 'error': error})
                             pkg_crashes.add(pkg['id'])
                     else:
+                        logger.info("Resource %s is blacklisted, skipping to next resource." % resource.get('name', ''))
                         blacklisted.append({'resource_id': resource['id'], 'id': extension})
 
-        print "NUMBER OF KEY ERROR CRASHES =", key_errors
-        print "NUMBER OF VALIDATION ERROR CRASHES =", validation_errors
-        print "NUMBER OF OTHER ERROR CRASHES =", len(other_errors_list)
-        print "NUMBER OF PACKAGE CRASHES =", len(pkg_crashes)
-        print "PACKAGE_IDs =", pkg_crashes
-        print "OTHER ERRORS =", other_errors_list
-        print "ALREADY ON S3 =", already_on_s3
-        print "NOT BLACKLISTED =", not_blacklisted
-        print "BLACKLISTED =", blacklisted
-        print "EXTENSIONS SEEN =", extensions_seen
+        logger.info("NUMBER OF KEY ERROR CRASHES = %d" %  key_errors)
+        logger.info("NUMBER OF VALIDATION ERROR CRASHES = %d" % validation_errors)
+        logger.info("NUMBER OF OTHER ERROR CRASHES = %d" % len(other_errors_list))
+        logger.info("NUMBER OF PACKAGE CRASHES = %d" % len(pkg_crashes))
+        logger.info("PACKAGE_IDs = %s" % pkg_crashes)
+        logger.info("OTHER ERRORS = %s" % other_errors_list)
+        logger.info("ALREADY ON S3 = %s" % already_on_s3)
+        logger.info("NOT BLACKLISTED = %d" % not_blacklisted)
+        logger.info("BLACKLISTED = %s" % blacklisted)
+        logger.info("EXTENSIONS SEEN = %s" % extensions_seen)
 
     def change_to_s3(self, context, resource):
         '''
