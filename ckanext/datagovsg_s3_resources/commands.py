@@ -15,17 +15,26 @@ class MigrateToS3(cli.CkanCommand):
     '''Migrate existing resources to S3
 
       Usage:
-          migrate_s3 - uploads all resources to S3 and updates the URL on CKAN
+          migrate_s3 - uploads all resources that are currently not on S3
+            to S3 and updates the URL on CKAN
+
+          migrate_s3 force_s3 - uploads ALL resources to S3
 
     '''
     summary = __doc__.split('\n')[0]
     usage = __doc__
-    max_args = 0
+    max_args = 1
     min_args = 0
 
     def command(self):
         '''Runs on the migrate_s3 command'''
         self._load_config()
+
+        skip_existing_s3_upload = True
+
+        if len(self.args) > 0:
+            if self.args[0] == 'force_s3':
+                skip_existing_s3_upload = False
 
         user = toolkit.get_action('get_site_user')({'model': model, 'ignore_auth': True}, {})
         context = {
@@ -68,7 +77,7 @@ class MigrateToS3(cli.CkanCommand):
             if pkg.get('num_resources') > 0:
                 for resource in pkg.get('resources'):
                     # If the resource is already uploaded to S3, don't reupload
-                    if resource['url_type'] == 's3':
+                    if skip_existing_s3_upload and resource['url_type'] == 's3':
                         logger.info("Resource %s is already on S3, skipping to next resource." % resource.get('name', ''))
                         already_on_s3.append(resource['id'])
                         continue
