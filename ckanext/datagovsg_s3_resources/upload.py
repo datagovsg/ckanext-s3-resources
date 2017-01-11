@@ -273,30 +273,30 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
     session = requests.Session()
 
     # Iterate over resources, downloading and storing them in the package zip file
-    for rsc in pkg.get('resources'):
+    for resource in pkg.get('resources'):
         # Case 1: Resource is uploaded to CKAN server
-        if rsc.get('url_type') == 'upload':
-            upload = uploader.ResourceUpload(rsc)
-            filepath = upload.get_path(rsc['id'])
-            filename = os.path.basename(rsc['url'])
+        if resource.get('url_type') == 'upload':
+            upload = uploader.ResourceUpload(resource)
+            filepath = upload.get_path(resource['id'])
+            filename = os.path.basename(resource['url'])
             package_zip_archive.write(filepath, filename)
 
             # Get timestamp of the update to append to the filenames
             timestamp = get_timestamp(resource)
 
-            rsc_extension = os.path.splitext(rsc['url'])[1]
+            resource_extension = os.path.splitext(resource['url'])[1]
             package_zip_archive.write(filepath, slugify(
-                rsc['name'], to_lower=True) + timestamp + rsc_extension)
+                resource['name'], to_lower=True) + timestamp + resource_extension)
 
         # Case 2: Resource is uploaded to S3
-        elif rsc.get('url_type') == 's3':
+        elif resource.get('url_type') == 's3':
             # Try to download the resource from the S3 URL
             try:
-                response = session.get(rsc.get('url', ''), timeout=10)
+                response = session.get(resource.get('url', ''), timeout=10)
             except requests.exceptions.RequestException:
                 toolkit.abort(404, toolkit._('Resource data not found'))
 
-            filename = os.path.basename(rsc['url'])
+            filename = os.path.basename(resource['url'])
             package_zip_archive.writestr(filename, response.content)
 
 
