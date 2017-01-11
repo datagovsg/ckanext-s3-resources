@@ -5,6 +5,7 @@ Contains functions that upload the resources/zipfiles to S3.
 
 Also contains the MetadataYAMLDumper class to generate the metadata for zipfiles.
 '''
+import cgi
 import os
 import StringIO
 import zipfile
@@ -66,17 +67,34 @@ def upload_resource_to_s3(context, resource):
 
     # Upload to S3
     pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
-    utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+    timestamp = get_timestamp(resource)
     s3_filepath = (pkg.get('name')
                    + '/'
                    + slugify(resource.get('name'), to_lower=True)
-                   + utc_datetime_now
+                   + timestamp
                    + extension)
-    resource['upload'].file.seek(0)
+
+    # If file is currently being uploaded, the file is in resource['upload']
+    if isinstance(resource.get('upload', None), cgi.FieldStorage):
+        resource['upload'].file.seek(0)
+        body = resource['upload'].file
+    # Otherwise, we should be able to download the file from resource['url']
+    else:
+        try:
+            # Start session to download files
+            session = requests.Session()
+            response = session.get(
+                resource.get('url', ''), timeout=10)
+            body = response.content
+
+        except requests.exceptions.RequestException:
+            toolkit.abort(404, toolkit._(
+                'Resource data not found'))
+
     try:
         bucket.Object(s3_filepath).delete()
         obj = bucket.put_object(Key=s3_filepath,
-                                Body=resource['upload'].file,
+                                Body=body,
                                 ContentType=content_type)
         obj.Acl().put(ACL='public-read')
     except Exception as exception:
@@ -123,11 +141,11 @@ def migrate_to_s3_upload(context, resource):
     extension = mimetypes.guess_extension(content_type)
 
     pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
-    utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+    timestamp = get_timestamp(resource)
     s3_filepath = (pkg.get('name') 
                    + '/' 
                    + slugify(resource.get('name'), to_lower=True) 
-                   + utc_datetime_now 
+                   + timestamp 
                    + extension)
     try:
         obj = bucket.put_object(Key=s3_filepath,
@@ -179,11 +197,11 @@ def upload_resource_zipfile_to_s3(context, resource):
         filepath = upload.get_path(resource['id'])
 
         # Get timestamp of the update to append to the filenames
-        utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+        timestamp = get_timestamp(resource)
 
         resource_zip_archive.write(
             filepath,
-            slugify(resource['name'], to_lower=True) + utc_datetime_now + resource_extension
+            slugify(resource['name'], to_lower=True) + timestamp + resource_extension
         )
 
     # Case 2: Resource exists on S3, download into package zip file
@@ -264,11 +282,11 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
             package_zip_archive.write(filepath, filename)
 
             # Get timestamp of the update to append to the filenames
-            utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+            timestamp = get_timestamp(resource)
 
             rsc_extension = os.path.splitext(rsc['url'])[1]
             package_zip_archive.write(filepath, slugify(
-                rsc['name'], to_lower=True) + utc_datetime_now + rsc_extension)
+                rsc['name'], to_lower=True) + timestamp + rsc_extension)
 
         # Case 2: Resource is uploaded to S3
         elif rsc.get('url_type') == 's3':
@@ -313,6 +331,15 @@ def is_blacklisted(resource):
     blacklist = [t.lower() for t in blacklist]
     return resource.get('format', '').lower() in blacklist
 
+def get_timestamp(resource):
+    '''get_timestamp - use the last modified time if it exists, otherwise use the created time'''
+    if resource.get('last_modified', None) is None:
+        if resource.get('created', None) is None:
+            return datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+        else:
+            return resource['created'].replace(':', '-')
+    else:
+        return resource['last_modified'].replace(':', '-')
 
 class MetadataYAMLDumper(yaml.SafeDumper):
     '''

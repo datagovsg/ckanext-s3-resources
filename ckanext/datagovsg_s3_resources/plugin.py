@@ -56,9 +56,6 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
             logger.error("Required S3 config options missing. Please check if required config options exist.")
             raise Exception('Required S3 config options missing')
         else:
-            # Set timestamp for archiving
-            context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
-
             # Only upload to S3 if not blacklisted
             if not upload.is_blacklisted(resource):
                 upload.upload_resource_to_s3(context, resource)
@@ -82,9 +79,6 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
             logger.info("Required S3 config options missing. Please check if required config options exist.")
             raise Exception('Required S3 config options missing')
         else:
-            # Set timestamp for archiving
-            context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
-
             # Only upload to S3 if not blacklisted
             if not upload.is_blacklisted(resource):
                 # Check if there's any file to upload

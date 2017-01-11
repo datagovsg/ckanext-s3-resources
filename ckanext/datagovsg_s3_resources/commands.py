@@ -29,15 +29,8 @@ class MigrateToS3(cli.CkanCommand):
 
         user = toolkit.get_action('get_site_user')({'model': model, 'ignore_auth': True}, {})
         context = {
-            'model': model,
-            'session': model.Session,
-            'user': user['name'],
             'ignore_auth': True
         }
-        context['session'].expire_on_commit = False
-        
-        # Set timestamp for archiving
-        context['s3_upload_timestamp'] = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H:%M:%SZ")
 
         # dataset_names (list) - list of dataset names
         # key_errors (int) - count of key errors encountered during migration
@@ -89,20 +82,22 @@ class MigrateToS3(cli.CkanCommand):
                             self.change_to_s3(context, resource)
                             logger.info("Successfully migrated resource %s to S3." % resource.get('name', ''))
                         except logic.ValidationError:
-                            logger.info("Validation Error when migrating resource %s" % resource.get('name', ''))
+                            logger.error("Validation Error when migrating resource %s" % resource.get('name', ''))
                             validation_errors += 1
                             pkg_crashes.add(pkg['id'])
                         except KeyError:
-                            logger.info("Key Error when migrating resource %s" % resource.get('name', ''))
+                            logger.error("Key Error when migrating resource %s" % resource.get('name', ''))
                             key_errors += 1
                             pkg_crashes.add(pkg['id'])
                         except Exception as error:
-                            logger.info("Error when migrating resource %s - %s" % (resource.get('name', ''), error))
+                            logger.error("Error when migrating resource %s - %s" % (resource.get('name', ''), error))
                             other_errors_list.append({'id': pkg['id'], 'error': error})
                             pkg_crashes.add(pkg['id'])
                     else:
                         logger.info("Resource %s is blacklisted, skipping to next resource." % resource.get('name', ''))
                         blacklisted.append({'resource_id': resource['id'], 'id': extension})
+            # Upload package zipfile to S3 after all the resources have been updated
+            upload.upload_package_zipfile_to_s3(context, pkg)
 
         logger.info("NUMBER OF KEY ERROR CRASHES = %d" %  key_errors)
         logger.info("NUMBER OF VALIDATION ERROR CRASHES = %d" % validation_errors)
@@ -119,8 +114,6 @@ class MigrateToS3(cli.CkanCommand):
         '''
         1. Uploads resource to S3
         2. Peforms resource_update
-        3. Uploads the updated zipfiles to S3
+        3. Uploads the updated resource zipfile to S3
         '''
-        upload.migrate_to_s3_upload(context, resource)
         toolkit.get_action('resource_update')(context, resource)
-        upload.upload_zipfiles_to_s3(context, resource)
