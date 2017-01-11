@@ -3,6 +3,7 @@ Includes S3ResourcesPackageController
 
 Handles package and resource downloads.
 '''
+import logging
 import os
 
 import mimetypes
@@ -28,6 +29,7 @@ class S3ResourcesPackageController(PackageController):
     def __init__(self):
         self.s3_url_prefix = config.get('ckan.datagovsg_s3_resources.s3_url_prefix')
 
+
     # download the whole dataset together with the metadata
     def package_download(self, id):
         '''Handles package downloads for CKAN going through S3'''
@@ -44,14 +46,21 @@ class S3ResourcesPackageController(PackageController):
             toolkit.abort(401, toolkit._(
                 'Unauthorized to read dataset %s') % id)
 
-        # Get package and redirect the request to the URL for the package zip
+        # Get package, track download, then redirect the request to the URL for the package zip
         pkg = toolkit.get_action('package_show')(context, {'id': id})
+        try:
+            toolkit.get_action('track_package_download')(context, pkg)
+        except Exception as exception:
+            # Log the error
+            logger = logging.getLogger(__name__)
+            logger.error("Error tracking package download - %s" % exception)
+
         redirect(self.s3_url_prefix
                  + pkg['name']
                  + '/'
                  + pkg['name']
-                 + '.zip'
-        )
+                 + '.zip')
+
 
     # override the default resource_download to download the zip file instead
     def resource_download(self, id, resource_id):
@@ -90,6 +99,14 @@ class S3ResourcesPackageController(PackageController):
         elif not 'url' in rsc:
             abort(404, _('No download is available'))
 
+        # Track download
+        try:
+            toolkit.get_action('track_resource_download')(context, rsc)
+        except Exception as exception:
+            # Log the error
+            logger = logging.getLogger(__name__)
+            logger.error("Error tracking resource download - %s" % exception)
+
         # Redirect the request to the URL for the resource zip
         pkg = toolkit.get_action('package_show')(context, {'id': id})
         redirect(self.s3_url_prefix
@@ -99,3 +116,4 @@ class S3ResourcesPackageController(PackageController):
                  + '/'
                  + slugify(rsc.get('name'), to_lower=True)
                  + '.zip')
+
