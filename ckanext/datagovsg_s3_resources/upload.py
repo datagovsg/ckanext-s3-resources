@@ -110,59 +110,6 @@ def upload_resource_to_s3(context, resource):
     resource['url'] = config.get('ckan.datagovsg_s3_resources.s3_url_prefix') + s3_filepath
 
 
-def migrate_to_s3_upload(context, resource):
-    '''
-    migrate_to_s3_upload
-
-    Uploads resource to S3 and destructively modifies the following resource fields:
-    - 'url_type'
-    - 'url'
-
-    Used for the paster command that migrates the database to S3
-    '''
-
-    # Init connection to S3
-    bucket = setup_s3_bucket()
-
-    # Start session to download files
-    session = requests.Session()
-
-    try:
-        response = session.get(
-            resource.get('url', ''), timeout=10)
-
-    except requests.exceptions.RequestException:
-        toolkit.abort(404, toolkit._(
-            'Resource data not found'))
-
-    # Get content type and extension
-    content_type, _ = mimetypes.guess_type(
-        resource.get('url', ''))
-    extension = mimetypes.guess_extension(content_type)
-
-    pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
-    timestamp = get_timestamp(resource)
-    s3_filepath = (pkg.get('name') 
-                   + '/' 
-                   + slugify(resource.get('name'), to_lower=True) 
-                   + timestamp 
-                   + extension)
-    try:
-        obj = bucket.put_object(Key=s3_filepath,
-                                Body=response.content,
-                                ContentType=content_type)
-        obj.Acl().put(ACL='public-read')
-    except Exception as exception:
-        # Log the error and reraise the exception
-        logger = logging.getLogger(__name__)
-        logger.error("Error uploading resource %s from package %s to S3" % (resource['name'], resource['package_id']))
-        logger.error(exception)
-        raise exception
-
-    resource['url_type'] = 's3'
-    resource['url'] = config.get('ckan.datagovsg_s3_resources.s3_url_prefix') + s3_filepath
-
-
 def upload_resource_zipfile_to_s3(context, resource):
     '''
     upload_resource_zipfile_to_s3 - Uploads the resource zip file to S3
