@@ -84,7 +84,12 @@ def upload_resource_to_s3(context, resource):
             # Start session to download files
             session = requests.Session()
             response = session.get(
-                resource.get('url', ''), timeout=10)
+                resource.get('url', ''), timeout=30)
+            # If the response status code is not 200 (i.e. success), raise Exception
+            if response.status_code != 200:
+                logger = logging.getLogger(__name__)
+                logger.error("Error obtaining resource from the given URL. Response status code is %d" % response.status_code)
+                raise Exception("Error obtaining resource from the given URL. Response status code is %d" % response.status_code)
             body = response.content
 
         except requests.exceptions.RequestException:
@@ -151,12 +156,17 @@ def upload_resource_zipfile_to_s3(context, resource):
             slugify(resource['name'], to_lower=True) + timestamp + resource_extension
         )
 
-    # Case 2: Resource exists on S3, download into package zip file
-    elif resource.get('url_type') == 's3':
+    # Case 2: Resource exists outside of CKAN, we should have a URL to download it
+    else:
         # Try to download the resource from the provided URL
         try:
             session = requests.Session()
-            response = session.get(resource.get('url', ''), timeout=10)
+            response = session.get(resource.get('url', ''), timeout=30)
+            # If the response status code is not 200 (i.e. success), raise Exception
+            if response.status_code != 200:
+                logger = logging.getLogger(__name__)
+                logger.error("Error obtaining resource from the given URL. Response status code is %d" % response.status_code)
+                raise Exception("Error obtaining resource from the given URL. Response status code is %d" % response.status_code)
         except requests.exceptions.RequestException:
             toolkit.abort(404, toolkit._('Resource data not found'))
 
@@ -235,11 +245,17 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
             package_zip_archive.write(filepath, slugify(
                 resource['name'], to_lower=True) + timestamp + resource_extension)
 
-        # Case 2: Resource is uploaded to S3
-        elif resource.get('url_type') == 's3':
-            # Try to download the resource from the S3 URL
+        # Case 2: Resource is not on CKAN, should have a URL to download it from
+        else:
+            # Try to download the resource from the resource URL
             try:
-                response = session.get(resource.get('url', ''), timeout=10)
+                response = session.get(resource.get('url', ''), timeout=30)
+                # If the response status code is not 200 (i.e. success), raise Exception
+                if response.status_code != 200:
+                    logger = logging.getLogger(__name__)
+                    logger.error("Error obtaining resource from the given URL. Response status code is %d" % response.status_code)
+                    raise Exception("Error obtaining resource from the given URL. Response status code is %d" % response.status_code)
+                
             except requests.exceptions.RequestException:
                 toolkit.abort(404, toolkit._('Resource data not found'))
 
