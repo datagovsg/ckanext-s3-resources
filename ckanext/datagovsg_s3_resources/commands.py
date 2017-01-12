@@ -105,6 +105,8 @@ class MigrateToS3(cli.CkanCommand):
                     else:
                         logger.info("Resource %s is blacklisted, skipping to next resource." % resource.get('name', ''))
                         blacklisted.append({'resource_id': resource['id'], 'id': extension})
+                        # Even if resource is blacklist, the resource zipfile should be uploaded to S3
+                        upload.upload_resource_zipfile_to_s3(context, resource)
             # Upload package zipfile to S3 after all the resources have been updated
             upload.upload_package_zipfile_to_s3(context, pkg)
 
