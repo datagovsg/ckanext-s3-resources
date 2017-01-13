@@ -13,6 +13,7 @@ import mimetypes
 import collections
 import logging
 import datetime
+from dateutil import parser
 
 from slugify import slugify
 from pylons import config
@@ -298,11 +299,13 @@ def get_timestamp(resource):
     '''get_timestamp - use the last modified time if it exists, otherwise use the created time'''
     if resource.get('last_modified', None) is None:
         if resource.get('created', None) is None:
-            return '-' + datetime.datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%SZ")
+            time = datetime.datetime.utcnow()
         else:
-            return '-' + resource['created'].replace(':', '-')
+            time = parser.parse(resource['created'])
     else:
-        return '-' + resource['last_modified'].replace(':', '-')
+        time = parser.parse(resource['last_modified'])
+
+    return '-' + time.strftime("%Y-%m-%dT%H-%M-%SZ")
 
 class MetadataYAMLDumper(yaml.SafeDumper):
     '''
