@@ -46,11 +46,13 @@ class MigrateToS3(cli.CkanCommand):
         # validation_errors (int) - count of validation errors encountered during migration
         # other_errors_list (list) - list of (non-key and non-validation) errors encountered during migration
         # pkg_crashes (set) - set of package IDs of packages that encountered errors during migration
+        # pkg_crashes_w_error (list) - list of dicts with two fields: 'pkg_id' and 'error'
         dataset_names = toolkit.get_action('package_list')(context, {})
         key_errors = 0
         validation_errors = 0
         other_errors_list = []
         pkg_crashes = set()
+        pkg_crashes_w_error = []
 
         # blacklist (list) - list of filetypes that we want to avoid uploading
         # Obtain the space separated string from config, then split to obtain a list
@@ -73,42 +75,45 @@ class MigrateToS3(cli.CkanCommand):
 
         for dataset_name in dataset_names:
             logger.info("Starting package migration to S3 for package %s" % dataset_name)
-            pkg = toolkit.get_action('package_show')(context, {'id': dataset_name})
-            if pkg.get('num_resources') > 0:
-                for resource in pkg.get('resources'):
-                    # If the resource is already uploaded to S3, don't reupload
-                    if skip_existing_s3_upload and resource['url_type'] == 's3':
-                        logger.info("Resource %s is already on S3, skipping to next resource." % resource.get('name', ''))
-                        already_on_s3.append(resource['id'])
-                        continue
-                    # If filetype of resource is blacklisted, skip the upload to S3
-                    extension = resource['format'].lower()
-                    extensions_seen.add(extension)
-                    if extension not in blacklist:
-                        not_blacklisted += 1
-                        try:
-                            logger.info("Attempting to migrate resource %s to S3..." % resource.get('name', ''))
-                            self.change_to_s3(context, resource)
-                            logger.info("Successfully migrated resource %s to S3." % resource.get('name', ''))
-                        except logic.ValidationError:
-                            logger.error("Validation Error when migrating resource %s" % resource.get('name', ''))
-                            validation_errors += 1
-                            pkg_crashes.add(pkg['id'])
-                        except KeyError:
-                            logger.error("Key Error when migrating resource %s" % resource.get('name', ''))
-                            key_errors += 1
-                            pkg_crashes.add(pkg['id'])
-                        except Exception as error:
-                            logger.error("Error when migrating resource %s - %s" % (resource.get('name', ''), error))
-                            other_errors_list.append({'id': pkg['id'], 'error': error})
-                            pkg_crashes.add(pkg['id'])
-                    else:
-                        logger.info("Resource %s is blacklisted, skipping to next resource." % resource.get('name', ''))
-                        blacklisted.append({'resource_id': resource['id'], 'id': extension})
-                        # Even if resource is blacklist, the resource zipfile should be uploaded to S3
-                        upload.upload_resource_zipfile_to_s3(context, resource)
-            # Upload package zipfile to S3 after all the resources have been updated
-            upload.upload_package_zipfile_to_s3(context, pkg)
+            try:
+                pkg = toolkit.get_action('package_show')(context, {'id': dataset_name})
+                if pkg.get('num_resources') > 0:
+                    for resource in pkg.get('resources'):
+                        # If the resource is already uploaded to S3, don't reupload
+                        if skip_existing_s3_upload and resource['url_type'] == 's3':
+                            logger.info("Resource %s is already on S3, skipping to next resource." % resource.get('name', ''))
+                            already_on_s3.append(resource['id'])
+                            continue
+                        # If filetype of resource is blacklisted, skip the upload to S3
+                        extension = resource['format'].lower()
+                        extensions_seen.add(extension)
+                        if extension not in blacklist:
+                            not_blacklisted += 1
+                            try:
+                                logger.info("Attempting to migrate resource %s to S3..." % resource.get('name', ''))
+                                self.change_to_s3(context, resource)
+                                logger.info("Successfully migrated resource %s to S3." % resource.get('name', ''))
+                            except logic.ValidationError:
+                                logger.error("Validation Error when migrating resource %s" % resource.get('name', ''))
+                                validation_errors += 1
+                                pkg_crashes.add(pkg['id'])
+                            except KeyError:
+                                logger.error("Key Error when migrating resource %s" % resource.get('name', ''))
+                                key_errors += 1
+                                pkg_crashes.add(pkg['id'])
+                            except Exception as error:
+                                logger.error("Error when migrating resource %s - %s" % (resource.get('name', ''), error))
+                                other_errors_list.append({'id': pkg['id'], 'error': error})
+                                pkg_crashes.add(pkg['id'])
+                        else:
+                            logger.info("Resource %s is blacklisted, skipping to next resource." % resource.get('name', ''))
+                            blacklisted.append({'resource_id': resource['id'], 'id': extension})
+                # Upload package zipfile to S3 after all the resources have been updated
+                upload.upload_package_zipfile_to_s3(context, pkg)
+            except Exception as error:
+                logger.error("Error when migrating package %s (ID: %s)" % (pkg.get('name', ''), pkg.get('id', '')))
+                pkg_crashes_w_error.append({'pkg_id': pkg.get('id', ''), 'error': error})
+
 
         logger.info("NUMBER OF KEY ERROR CRASHES = %d" %  key_errors)
         logger.info("NUMBER OF VALIDATION ERROR CRASHES = %d" % validation_errors)
@@ -120,6 +125,7 @@ class MigrateToS3(cli.CkanCommand):
         logger.info("NOT BLACKLISTED = %d" % not_blacklisted)
         logger.info("BLACKLISTED = %s" % blacklisted)
         logger.info("EXTENSIONS SEEN = %s" % extensions_seen)
+        logger.info("PACKAGE CRASHES WITH ERROR MESSAGE = \n%s" % pkg_crashes_w_error)
 
     def change_to_s3(self, context, resource):
         '''
