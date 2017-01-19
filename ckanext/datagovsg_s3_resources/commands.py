@@ -46,7 +46,7 @@ class MigrateToS3(cli.CkanCommand):
         # validation_errors (int) - count of validation errors encountered during migration
         # other_errors_list (list) - list of (non-key and non-validation) errors encountered during migration
         # pkg_crashes (set) - set of package IDs of packages that encountered errors during migration
-        # pkg_crashes_w_error (list) - list of dicts with two fields: 'pkg_id' and 'error'
+        # pkg_crashes_w_error (list) - list of dicts with two fields: 'pkg_name' and 'error'
         dataset_names = toolkit.get_action('package_list')(context, {})
         key_errors = 0
         validation_errors = 0
@@ -111,8 +111,8 @@ class MigrateToS3(cli.CkanCommand):
                 # Upload package zipfile to S3 after all the resources have been updated
                 upload.upload_package_zipfile_to_s3(context, pkg)
             except Exception as error:
-                logger.error("Error when migrating package %s (ID: %s)" % (pkg.get('name', ''), pkg.get('id', '')))
-                pkg_crashes_w_error.append({'pkg_id': pkg.get('id', ''), 'error': error})
+                logger.error("Error when migrating package %s with error %s" % (dataset_name, error))
+                pkg_crashes_w_error.append({'pkg_name': dataset_name, 'error': error})
 
 
         logger.info("NUMBER OF KEY ERROR CRASHES = %d" %  key_errors)
