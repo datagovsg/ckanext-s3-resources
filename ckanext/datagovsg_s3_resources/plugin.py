@@ -90,7 +90,7 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
 
         # Remove 'resource_create_or_update' in context. See documentation in 'before_create_or_update'
         # for more details
-        if 'resource_create_or_update' in context:
+        if 'resource_create_or_update' in context and upload.config_exists():
             context.pop('resource_create_or_update')
             pkg = plugins.toolkit.get_action('package_show')(data_dict={'id': resource['package_id']})
             upload.upload_package_zipfile_to_s3(context, pkg)
