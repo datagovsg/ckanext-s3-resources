@@ -258,7 +258,6 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
             upload = uploader.ResourceUpload(resource)
             filepath = upload.get_path(resource['id'])
             filename = os.path.basename(resource['url'])
-            package_zip_archive.write(filepath, filename)
 
             # Get timestamp of the update to append to the filenames
             timestamp = get_timestamp(resource)
@@ -315,7 +314,12 @@ def is_blacklisted(resource):
     '''is_blacklisted - Check if the resource type is blacklisted'''
     blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist', '').split()
     blacklist = [t.lower() for t in blacklist]
-    return resource.get('format', '').lower() in blacklist
+    resource_format = resource.get('format', '').lower()
+    # If resource is being created, format will still be empty. Use file extension instead
+    if resource_format == '':
+        _, file_ext = os.path.splitext(resource.get('url'))
+        resource_format = file_ext[1:].lower()
+    return resource_format in blacklist
 
 def get_timestamp(resource):
     '''get_timestamp - use the last modified time if it exists, otherwise use the created time'''
