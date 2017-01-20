@@ -46,8 +46,11 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
     # IResourceController ########################################
     ##############################################################
 
-    def before_create(self, context, resource):
-        '''Runs before resource_create. Modifies resource destructively to put in the S3 URL'''
+    def before_create_or_update(self, context, resource):
+        '''before_create_or_update - our own function. NOT a CKAN hook.
+        Contains shared code performed regardless of whether we are
+        creating or updating.
+        '''
 
         # Check if required config options exist
         if not upload.config_exists():
@@ -60,37 +63,56 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
             if not upload.is_blacklisted(resource):
                 upload.upload_resource_to_s3(context, resource)
             else:
-                # Log a warning
+                # If blacklisted, the resource file is uploaded to CKAN.
+                # 
+                # However, in the CKAN source resource_create/resource_update, package_update is 
+                # called before the file is uploaded.
+                # 
+                # This causes a problem as our package after_update attempts to upload
+                # the package zipfile and it cannot locate the resource file.
+                # 
+                # To solve this, we add the field 'resource_create_or_update' into the context object,
+                # and look for it in the package after_update.
+                # 
+                # We remove this field from the context object in resource after_create and after_update.
+                # 
+                # We don't actually use the value context['resource_create_or_update'], we just check
+                # the existence of 'resource_create_or_update' in context.
+                context['resource_create_or_update'] = True
+
                 logger = logging.getLogger(__name__)
                 logger.info("Resource %s from package %s is blacklisted and not uploaded to S3." % (resource['name'], resource['package_id']))
 
-    def after_create(self, context, resource):
+    def after_create_or_update(self, context, resource):
         '''Uploads resource zip file to S3
-        Done after create instead of before to ensure metadata is generated correctly'''
+        Done after create/update instead of before to ensure metadata is generated correctly'''
         upload.upload_resource_zipfile_to_s3(context, resource)
+
+        # Remove 'resource_create_or_update' in context. See documentation in 'before_create_or_update'
+        # for more details
+        if 'resource_create_or_update' in context:
+            context.pop('resource_create_or_update')
+            pkg = plugins.toolkit.get_action('package_show')(data_dict={'id': resource['package_id']})
+            upload.upload_package_zipfile_to_s3(context, pkg)
+
+    def before_create(self, context, resource):
+        '''Runs before resource_create. Modifies resource destructively to put in the S3 URL'''
+        self.before_create_or_update(context, resource)
+
+    def after_create(self, context, resource):
+        '''after_create - Runs after resource_create.'''
+        self.after_create_or_update(context, resource)
 
     def before_update(self, context, _, resource):
         '''Runs before resource_update. Modifies resource destructively to put in the S3 URL'''
-
-        # Check if required config options exist
-        if not upload.config_exists():
-            # Log an error
-            logger = logging.getLogger(__name__)
-            logger.info("Required S3 config options missing. Please check if required config options exist.")
-            raise Exception('Required S3 config options missing')
-        else:
-            # Only upload to S3 if not blacklisted
-            if not upload.is_blacklisted(resource):
-                upload.upload_resource_to_s3(context, resource)
-            else:
-                # Log a warning
-                logger = logging.getLogger(__name__)
-                logger.info("Resource %s from package %s is blacklisted and not uploaded to S3." % (resource['name'], resource['package_id']))
+        self.before_create_or_update(context, resource)
 
     def after_update(self, context, resource):
-        '''Uploads resource zip file to S3
-        Done after update instead of before to ensure metadata is generated correctly'''
-        upload.upload_resource_zipfile_to_s3(context, resource)
+        '''after_update - Runs after resource_update.
+
+        Uploads resource zip to S3 and then manually pushes to datastore. Read documentation in
+        function for more details.'''
+        self.after_create_or_update(context, resource)
 
         # Push data to datastore
         # Unfortunately we have to do this here because datapusher currently runs on the

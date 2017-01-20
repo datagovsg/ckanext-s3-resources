@@ -47,12 +47,23 @@ class DatagovsgS3ResourcesPackagePlugin(plugins.SingletonPlugin):
     def after_update(self, context, pkg_dict):
         '''after_update - uploads package zipfile to s3'''
 
-        # Check if required config options exist
-        if not upload.config_exists():
-            # Log an error
-            logger = logging.getLogger(__name__)
-            logger.error("Required S3 config options missing. Please check if required config options exist.")
-            raise Exception('Required S3 config options missing')
+        # Obtain logger
+        logger = logging.getLogger(__name__)
+
+        # Check context object
+        # If originating from resource create or update, skip package zipfile
+        # upload for now
+        # For more information, read documentation in 'before_create_or_update'
+        if 'resource_create_or_update' not in context:
+            logger.info("Package after_update originating from resource create/update")
+            # Check if required config options exist
+            if not upload.config_exists():
+                # Log an error
+                logger.error("Required S3 config options missing. Please check if required config options exist.")
+                raise Exception('Required S3 config options missing')
+            else:
+                upload.upload_package_zipfile_to_s3(context, pkg_dict)
         else:
-            upload.upload_package_zipfile_to_s3(context, pkg_dict)
+            # Skip package_zipfile upload
+            logger.info("Package after_update without resource create/update... Skipping package zipfile upload")
  
