@@ -55,7 +55,7 @@ class DatagovsgS3ResourcesPackagePlugin(plugins.SingletonPlugin):
         # upload for now
         # For more information, read documentation in 'before_create_or_update'
         if 'resource_create_or_update' not in context:
-            logger.info("Package after_update originating from resource create/update")
+            logger.info("Package after_update without originating from resource create/update")
             # Check if required config options exist
             if not upload.config_exists():
                 # Log an error
@@ -65,5 +65,5 @@ class DatagovsgS3ResourcesPackagePlugin(plugins.SingletonPlugin):
                 upload.upload_package_zipfile_to_s3(context, pkg_dict)
         else:
             # Skip package_zipfile upload
-            logger.info("Package after_update without resource create/update... Skipping package zipfile upload")
+            logger.info("Package after_update originating from resource create/update... Skipping package zipfile upload")
  
