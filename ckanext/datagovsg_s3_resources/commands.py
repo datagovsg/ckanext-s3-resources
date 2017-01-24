@@ -49,12 +49,6 @@ class MigrateToS3(cli.CkanCommand):
         self.pkg_crashes_w_error = []
         logger = logging.getLogger(__name__)
 
-        # blacklist (list) - list of filetypes that we want to avoid uploading
-        # Obtain the space separated string from config, then split to obtain a list
-        # and convert elements to lowercase
-        blacklist = config.get('ckan.datagovsg_s3_resources.upload_filetype_blacklist', '').split()
-        self.blacklist = [t.lower() for t in blacklist]
-
         for package_name in package_names:
             self.migrate_package_to_s3(context, package_name)
 
@@ -89,8 +83,7 @@ class MigrateToS3(cli.CkanCommand):
                         logger.info("Resource %s is already on S3, skipping to next resource.", resource.get('name', ''))
                         continue
                     # If filetype of resource is blacklisted, skip the upload to S3
-                    extension = resource['format'].lower()
-                    if extension not in self.blacklist:
+                    if not upload.is_blacklisted(resource):
                         try:
                             logger.info("Attempting to migrate resource %s to S3...", resource.get('name', ''))
                             self.change_to_s3(context, resource)
