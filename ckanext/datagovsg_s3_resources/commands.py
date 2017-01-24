@@ -49,6 +49,8 @@ class MigrateToS3(cli.CkanCommand):
         self.pkg_crashes_w_error = []
         logger = logging.getLogger(__name__)
 
+        package_names = ['pm2-5', 'ultraviolet-index-uvi', '2nd-hand-goods-collection-points']
+
         for package_name in package_names:
             self.migrate_package_to_s3(context, package_name)
 
@@ -61,6 +63,10 @@ class MigrateToS3(cli.CkanCommand):
             self.migrate_package_to_s3(context, package_name_and_error['pkg_name'])
 
         logger.info("Package Crashes = \n%s", self.pkg_crashes_w_error)
+
+        errors_dict = self.group_errors()
+
+        logger.info("Package Crashes by error = \n%s", errors_dict)
 
     def change_to_s3(self, context, resource):
         '''change_to_s3 - performs resource_update. The before and after update hooks
@@ -107,3 +113,14 @@ class MigrateToS3(cli.CkanCommand):
             # Cleanup sqlalchemy session
             # Required to prevent errors when uploading remaining packages
             model.Session.remove()
+
+    def group_errors(self):
+        errors_dict = dict()
+        for pkg_error in self.pkg_crashes_w_error:
+            pkg_name = pkg_error['pkg_name']
+            error = str(pkg_error['error'])
+            if errors_dict.get(error):
+                errors_dict.get(error).append(pkg_name)
+            else:
+                errors_dict[error] = [pkg_name]
+        return errors_dict
