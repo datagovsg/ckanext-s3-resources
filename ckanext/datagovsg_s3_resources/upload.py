@@ -75,6 +75,8 @@ def upload_resource_to_s3(context, resource):
     timestamp = get_timestamp(resource)
     s3_filepath = (pkg.get('name')
                    + '/'
+                   + 'resources'
+                   + '/'
                    + slugify(resource.get('name'), to_lower=True)
                    + timestamp
                    + extension)
@@ -195,6 +197,8 @@ def upload_resource_zipfile_to_s3(context, resource):
     # Upload the resource zip to S3
     resource_zip_archive.close()
     resource_filename = (pkg.get('name')
+                         + '/'
+                         + 'resources'
                          + '/'
                          + slugify(resource.get('name'), to_lower=True)
                          + '.zip')

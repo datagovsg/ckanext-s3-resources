@@ -95,5 +95,7 @@ class S3ResourcesPackageController(PackageController):
         redirect(self.s3_url_prefix
                  + pkg['name']
                  + '/'
+                 + 'resources'
+                 + '/'
                  + slugify(rsc.get('name'), to_lower=True)
                  + '.zip')
