@@ -49,8 +49,6 @@ class MigrateToS3(cli.CkanCommand):
         self.pkg_crashes_w_error = []
         logger = logging.getLogger(__name__)
 
-        package_names = ['pm2-5', 'ultraviolet-index-uvi', '2nd-hand-goods-collection-points']
-
         for package_name in package_names:
             self.migrate_package_to_s3(context, package_name)
 
@@ -88,6 +86,7 @@ class MigrateToS3(cli.CkanCommand):
                     if self.skip_existing_s3_upload and resource['url_type'] == 's3':
                         logger.info("Resource %s is already on S3, skipping to next resource.", resource.get('name', ''))
                         continue
+
                     # If filetype of resource is blacklisted, skip the upload to S3
                     if not upload.is_blacklisted(resource):
                         try:
@@ -100,11 +99,12 @@ class MigrateToS3(cli.CkanCommand):
                     else:
                         logger.info("Resource %s is blacklisted, skipping to next resource.", resource.get('name', ''))
 
-                        # Upload resource and package zipfile to S3
+                        # Upload resource zipfile to S3
                         # If not blacklisted, will be done automatically as part of resource_update.
-                        # If blacklisted, we still want to upload the package zipfile, so we do it here.
                         upload.upload_resource_zipfile_to_s3(context, resource)
-                        upload.upload_package_zipfile_to_s3(context, pkg)
+                
+                # After updating all the resources, upload package zipfile to S3
+                upload.upload_package_zipfile_to_s3(context, pkg)
 
         except Exception as error:
             logger.error("Error when migrating package %s with error %s", package_name, error)

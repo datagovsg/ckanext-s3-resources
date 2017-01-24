@@ -136,6 +136,10 @@ def upload_resource_zipfile_to_s3(context, resource):
     logger = logging.getLogger(__name__)
     logger.info("Starting upload_resource_zipfile_to_s3 for resource %s" % resource.get('name', ''))
     
+    # If resource is an API, skip upload
+    if resource.get('format', '') == 'API':
+        return
+
     # Get resource's package
     pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
 
@@ -158,6 +162,8 @@ def upload_resource_zipfile_to_s3(context, resource):
 
     # Obtain extension type of the resource
     resource_extension = os.path.splitext(resource['url'])[1]
+    filename = (slugify(resource['name'], to_lower=True)
+                + resource_extension)
 
     # Case 1: Resource is not on s3 yet, need to download from CKAN
     if resource.get('url_type') == 'upload':
@@ -165,13 +171,7 @@ def upload_resource_zipfile_to_s3(context, resource):
         upload = uploader.ResourceUpload(resource)
         filepath = upload.get_path(resource['id'])
 
-        # Get timestamp of the update to append to the filenames
-        timestamp = get_timestamp(resource)
-
-        resource_zip_archive.write(
-            filepath,
-            slugify(resource['name'], to_lower=True) + timestamp + resource_extension
-        )
+        resource_zip_archive.write(filepath, filename)
 
     # Case 2: Resource exists outside of CKAN, we should have a URL to download it
     else:
@@ -188,7 +188,6 @@ def upload_resource_zipfile_to_s3(context, resource):
         except requests.exceptions.RequestException:
             toolkit.abort(404, toolkit._('Resource data not found'))
 
-        filename = os.path.basename(resource['url'])
         resource_zip_archive.writestr(filename, response.content)
 
     # Initialize connection to S3
@@ -232,6 +231,11 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
     logger = logging.getLogger(__name__)
     logger.info("Starting upload_package_zipfile_to_S3 for package %s" % pkg.get('name', ''))
 
+    # If all resources are APIs, don't upload the zipfile
+    if resources_all_api(pkg.get('resources')):
+        logger.info("All resources are APIs, skipping package zipfile upload")
+        return
+
     # Obtain package and package metadata
     metadata = toolkit.get_action(
         'package_metadata_show')(data_dict={'id': pkg['id']})
@@ -256,21 +260,21 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
 
     # Iterate over resources, downloading and storing them in the package zip file
     for resource in pkg.get('resources'):
-        # Case 1: Resource is uploaded to CKAN server
-        if resource.get('url_type') == 'upload':
+        resource_extension = os.path.splitext(resource['url'])[1]
+        filename = (slugify(resource['name'], to_lower=True)
+                    + resource_extension)
+
+        # Case 1: Resource is API, skip it
+        if resource.get('format') == 'API':
+            continue
+        # Case 2: Resource is uploaded to CKAN server
+        elif resource.get('url_type') == 'upload':
             logger.info("Obtaining resource file from CKAN for resource %s" % resource.get('name', ''))
             upload = uploader.ResourceUpload(resource)
             filepath = upload.get_path(resource['id'])
-            filename = os.path.basename(resource['url'])
+            package_zip_archive.write(filepath, filename)
 
-            # Get timestamp of the update to append to the filenames
-            timestamp = get_timestamp(resource)
-
-            resource_extension = os.path.splitext(resource['url'])[1]
-            package_zip_archive.write(filepath, slugify(
-                resource['name'], to_lower=True) + timestamp + resource_extension)
-
-        # Case 2: Resource is not on CKAN, should have a URL to download it from
+        # Case 3: Resource is not on CKAN, should have a URL to download it from
         else:
             # Try to download the resource from the resource URL
             try:
@@ -284,7 +288,6 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
             except requests.exceptions.RequestException:
                 toolkit.abort(404, toolkit._('Resource data not found'))
 
-            filename = os.path.basename(resource['url'])
             package_zip_archive.writestr(filename, response.content)
 
 
@@ -313,6 +316,11 @@ def upload_package_zipfile_to_s3(context, pkg_dict):
         logger.error(exception)
         raise exception
 
+def resources_all_api(resources):
+    for resource in resources:
+        if resource.get('format', '') != 'API':
+            return False
+    return True
 
 def is_blacklisted(resource):
     '''is_blacklisted - Check if the resource type is blacklisted'''

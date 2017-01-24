@@ -59,8 +59,11 @@ class DatagovsgS3ResourcesPlugin(plugins.SingletonPlugin):
             logger.error("Required S3 config options missing. Please check if required config options exist.")
             raise Exception('Required S3 config options missing')
         else:
+            # If resource is an API, don't do anything special
+            if resource.get('format') == 'API':
+                return
             # Only upload to S3 if not blacklisted
-            if not upload.is_blacklisted(resource):
+            elif not upload.is_blacklisted(resource):
                 upload.upload_resource_to_s3(context, resource)
             else:
                 # If blacklisted, the resource file is uploaded to CKAN.
