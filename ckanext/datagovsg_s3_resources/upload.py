@@ -21,8 +21,10 @@ import boto3
 import yaml
 import requests
 
+import paste.fileapp
 import ckan.plugins.toolkit as toolkit
 import ckan.lib.uploader as uploader
+from ckan.common import request
 
 
 def setup_s3_bucket():
@@ -86,7 +88,15 @@ def upload_resource_to_s3(context, resource):
         logger.info("File is being uploaded")
         resource['upload'].file.seek(0)
         body = resource['upload'].file
-    # Otherwise, we should be able to download the file from resource['url']
+    # If resource.get('url_type') == 'upload' then the resource is in CKAN file system
+    elif resource.get('url_type') == 'upload':
+        logger.info("File is on CKAN file store")
+        upload = uploader.ResourceUpload(resource)
+        filepath = upload.get_path(resource['id'])
+        try:
+            body = open(filepath, 'r')
+        except OSError:
+            abort(404, _('Resource data not found'))
     else:
         logger.info("File is downloadable from URL")
         try:
@@ -119,7 +129,12 @@ def upload_resource_to_s3(context, resource):
         # Log the error and reraise the exception
         logger.error("Error uploading resource %s from package %s to S3" % (resource['name'], resource['package_id']))
         logger.error(exception)
+        if resource.get('url_type') == 'upload':
+            body.close()
         raise exception
+
+    if resource.get('url_type') == 'upload':
+        body.close()
 
     # Modify fields in resource
     resource['upload'] = ''
