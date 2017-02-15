@@ -74,13 +74,14 @@ def upload_resource_to_s3(context, resource):
 
     # Upload to S3
     pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
-    timestamp = get_timestamp(resource)
+    timestamp = datetime.datetime.utcnow() # should match the assignment in the ResourceUpload class
     s3_filepath = (pkg.get('name')
                    + '/'
                    + 'resources'
                    + '/'
                    + slugify(resource.get('name'), to_lower=True)
-                   + timestamp
+                   + '-'
+                   + timestamp.strftime("%Y-%m-%dT%H-%M-%SZ")
                    + extension)
 
     # If file is currently being uploaded, the file is in resource['upload']
@@ -140,6 +141,7 @@ def upload_resource_to_s3(context, resource):
     resource['upload'] = ''
     resource['url_type'] = 's3'
     resource['url'] = config.get('ckan.datagovsg_s3_resources.s3_url_prefix') + s3_filepath
+    update_timestamp(resource, timestamp)
 
 
 def upload_resource_zipfile_to_s3(context, resource):
@@ -348,17 +350,15 @@ def is_blacklisted(resource):
         resource_format = file_ext[1:].lower()
     return resource_format in blacklist
 
-def get_timestamp(resource):
-    '''get_timestamp - use the last modified time if it exists, otherwise use the created time'''
-    if resource.get('last_modified', None) is None:
-        if resource.get('created', None) is None:
-            time = datetime.datetime.utcnow()
-        else:
-            time = parser.parse(resource['created'])
-    else:
-        time = parser.parse(resource['last_modified'])
+def update_timestamp(resource, timestamp):
+    '''use the last modified time if it exists, otherwise use the created time.
 
-    return '-' + time.strftime("%Y-%m-%dT%H-%M-%SZ")
+    destructively modifies resource'''
+    if resource.get('last_modified') is None and resource.get('created') is None:
+        resource['created'] = timestamp
+    else:
+        resource['last_modified'] = timestamp
+
 
 class MetadataYAMLDumper(yaml.SafeDumper):
     '''
