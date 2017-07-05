@@ -11,6 +11,7 @@ import zipfile
 import mimetypes
 import collections
 import logging
+import datetime
 
 from slugify import slugify
 from pylons import config
@@ -43,7 +44,7 @@ def setup_s3_bucket():
     bucket = s3.Bucket(bucket_name)
 
     return bucket
- 
+
 
 def upload_resource_to_s3(context, resource):
     '''
@@ -65,9 +66,12 @@ def upload_resource_to_s3(context, resource):
 
     # Upload to S3
     pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
-    utc_datetime_now = context['s3_upload_timestamp']
-    s3_filepath = (pkg.get('name') + '/' + slugify(resource.get('name'), to_lower=True)
-                   + utc_datetime_now + extension)
+    utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+    s3_filepath = (pkg.get('name')
+                   + '/'
+                   + slugify(resource.get('name'), to_lower=True)
+                   + utc_datetime_now
+                   + extension)
     resource['upload'].file.seek(0)
     try:
         bucket.Object(s3_filepath).delete()
@@ -119,7 +123,7 @@ def migrate_to_s3_upload(context, resource):
     extension = mimetypes.guess_extension(content_type)
 
     pkg = toolkit.get_action('package_show')(context, {'id': resource['package_id']})
-    utc_datetime_now = context['s3_upload_timestamp']  
+    utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
     s3_filepath = (pkg.get('name') 
                    + '/' 
                    + slugify(resource.get('name'), to_lower=True) 
@@ -166,9 +170,6 @@ def upload_resource_zipfile_to_s3(context, resource):
     resource_zip_archive.writestr(
         'metadata-' + pkg.get('name') + '.txt', metadata_yaml_buff.getvalue())
 
-    # Get timestamp of the update to append to the filenames
-    utc_datetime_now = context['s3_upload_timestamp']
-
     # Obtain extension type of the resource
     resource_extension = os.path.splitext(resource['url'])[1]
 
@@ -176,6 +177,10 @@ def upload_resource_zipfile_to_s3(context, resource):
     if resource.get('url_type') == 'upload':
         upload = uploader.ResourceUpload(resource)
         filepath = upload.get_path(resource['id'])
+
+        # Get timestamp of the update to append to the filenames
+        utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+
         resource_zip_archive.write(
             filepath,
             slugify(resource['name'], to_lower=True) + utc_datetime_now + resource_extension
@@ -190,10 +195,8 @@ def upload_resource_zipfile_to_s3(context, resource):
         except requests.exceptions.RequestException:
             toolkit.abort(404, toolkit._('Resource data not found'))
 
-        resource_zip_archive.writestr(
-            slugify(resource.get('name'), to_lower=True) + utc_datetime_now + resource_extension,
-            response.content
-        )
+        filename = os.path.basename(resource['url'])
+        resource_zip_archive.writestr(filename, response.content)
 
     # Initialize connection to S3
     bucket = setup_s3_bucket()
@@ -203,7 +206,6 @@ def upload_resource_zipfile_to_s3(context, resource):
     resource_filename = (pkg.get('name')
                          + '/'
                          + slugify(resource.get('name'), to_lower=True)
-                         + utc_datetime_now
                          + '.zip')
     try:
         obj = bucket.put_object(
@@ -258,6 +260,13 @@ def upload_package_zipfile_to_s3(context, pkg):
             filename = os.path.basename(rsc['url'])
             package_zip_archive.write(filepath, filename)
 
+            # Get timestamp of the update to append to the filenames
+            utc_datetime_now = datetime.datetime.utcnow().strftime("-%Y-%m-%dT%H-%M-%SZ")
+
+            rsc_extension = os.path.splitext(rsc['url'])[1]
+            package_zip_archive.write(filepath, slugify(
+                rsc['name'], to_lower=True) + utc_datetime_now + rsc_extension)
+
         # Case 2: Resource is uploaded to S3
         elif rsc.get('url_type') == 's3':
             # Try to download the resource from the S3 URL
@@ -292,7 +301,7 @@ def upload_package_zipfile_to_s3(context, pkg):
         logger = logging.getLogger(__name__)
         logger.error("Error uploading package %s zip to S3" % (pkg['id']))
         logger.error(exception)
-        raise exception            
+        raise exception
 
 
 def is_blacklisted(resource):
