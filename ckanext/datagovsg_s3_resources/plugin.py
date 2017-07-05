@@ -1,13 +1,18 @@
 import ckan.plugins as plugins
 import ckan.plugins.toolkit as toolkit
-
+import upload
 
 class Datagovsg_S3_ResourcesPlugin(plugins.SingletonPlugin):
-    plugins.implements(plugins.IConfigurer)
+    plugins.implements(plugins.IResourceController, inherit=True)
 
-    # IConfigurer
+    def after_create(self, context, resource):
+        # Call resource_update to upload files to S3 and update the CKAN db
+        toolkit.get_action('resource_update')(context, resource)
 
-    def update_config(self, config_):
-        toolkit.add_template_directory(config_, 'templates')
-        toolkit.add_public_directory(config_, 'public')
-        toolkit.add_resource('fanstatic', 'datagovsg_s3_resources')
+    def after_update(self, context, resource):
+        # Check if we need to upload the files to S3
+        if resource['url_type'] == 'upload':
+            upload.upload_resource_to_s3(context, resource)
+            toolkit.get_action('resource_update')(context, resource)
+        else:
+            upload.upload_zipfiles_to_s3(context, resource)
