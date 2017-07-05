@@ -4,7 +4,6 @@ from os import path
 
 here = path.abspath(path.dirname(__file__))
 
-
 setup(
     name='''ckanext-datagovsg_s3_resources''',
 
