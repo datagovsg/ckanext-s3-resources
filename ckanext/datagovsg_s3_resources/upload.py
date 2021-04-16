@@ -34,7 +34,9 @@ def setup_s3_bucket():
     aws_access_key_id = config.get('ckan.datagovsg_s3_resources.s3_aws_access_key_id')
     aws_secret_access_key = config.get('ckan.datagovsg_s3_resources.s3_aws_secret_access_key')
     aws_region_name = config.get('ckan.datagovsg_s3_resources.s3_aws_region_name')
-    if aws_region_name:
+    if not aws_access_key_id or not aws_secret_access_key:
+        s3 = boto3.resource('s3')
+    elif aws_region_name:
         s3 = boto3.resource('s3',
                             aws_access_key_id=aws_access_key_id,
                             aws_secret_access_key=aws_secret_access_key,
